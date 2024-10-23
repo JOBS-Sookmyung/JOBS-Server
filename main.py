@@ -1,34 +1,56 @@
-from fastapi import FastAPI
-from openai import OpenAI
-import os
-from dotenv import load_dotenv
+from utils import pdfAnalyzer as pa
+from pydantic import BaseModel
+from fastapi import FastAPI, File, UploadFile
+from fastapi.middleware.cors import CORSMiddleware as cors
+import uvicorn
 
-load_dotenv()
+import aiofiles
+import json
+import os
+
+origins = [
+    'http://127.0.0.1',
+    'http://127.0.0.1:8080'
+]
 
 app = FastAPI()
-client = OpenAI()
-client.api_key = os.getenv("OPENAI_API_KEY")
-
-completion = client.chat.completions.create(
-    model="gpt-4o-mini",
-    messages=[
-        {
-			"role": "system",
-			"content": "You are a helpful assistant. Answer in Korean."
-		},
-        {
-            "role": "user",
-            "content": "회계사 합격하는 법 알려줘."
-        }
-    ]
+app.add_middleware(
+	cors,
+    allow_origins=origins,
+	allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-assistantAnswer = completion.choices[0].message.content
+_host = '127.0.0.1'
+_port = 8080
+_path = os.getcwd()
+_filespath = os.path.join(_path, 'files')
 
-@app.get('/')
-def home():
-	return {"message": "Welcome Home!"}
+class FileModel(BaseModel):
+	file: UploadFile = File(None)
 
-@app.get('/q')
-def question():
-	return assistantAnswer
+@app.post('/files')
+async def get_file_to_json(filename: str):
+	return pa.pdf_to_json(filename)
+
+@app.post('/uploadfile')
+async def upload_file(uploadFile: FileModel):
+	async with aiofiles.open(_filespath, 'wb') as outFile:
+		content = await uploadFile.file.read()
+		await outFile.write(content)
+		
+	retval = {"filename": uploadFile.file.filename}
+	print(retval)
+	return retval
+
+class URL(BaseModel):
+	url: str
+
+@app.post('/uploadurl')
+def upload_url(data: URL):
+	retval = {"url": data.url}
+	print(retval)
+	return retval
+
+if __name__ == '__main__':
+    uvicorn.run("main:app", host=_host, port=_port)

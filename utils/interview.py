@@ -1,4 +1,5 @@
 import os
+import pandas as pd
 # OpenAI API 키 설정
 # os.environ ... => Dotenv로 대체 필요함
 
@@ -8,11 +9,11 @@ from langchain.chains import LLMChain
 from langchain.llms import OpenAI
 from routers import pdf_files
 from config import FILE_DIR
-from utils import load_pdf_to_text, summarize_text
+from utils.common import load_pdf_to_text, summarize_text, load_mock_interview_data
 
 # 질문 및 답변 관리 클래스
 class InterviewSession:
-    def __init__(self, token: str, question_num=5):
+    def __init__(self, token: str, question_num=5, mock_data_path=None):
         self.token = token
         self.question_num = question_num
 
@@ -23,20 +24,15 @@ class InterviewSession:
         # 이력서 텍스트 로드
         self.resume = self._load_pdf_to_resume()
 
-        # 예시 질문 템플릿
-        self.example_questions = '''
-        질문 1: 객체지향 프로그래밍(OOP)의 4대 원칙은 무엇이며, 각각을 설명해주세요.
-        질문 2: RESTful API란 무엇이며, 설계 원칙을 설명해주세요.
-        질문 3: 데이터베이스 인덱스(Index)란 무엇이며, 어떤 상황에서 사용해야 하나요?
-        질문 4: 자바(Java)에서 메모리 관리 방식에 대해 설명해주세요.
-        질문 5: Git에서 브랜치(branch)를 사용할 때의 이점은 무엇인가요?
-        '''
+        # 모의 면접 데이터 로드
+        self.mock_data_path = mock_data_path
+        self.example_questions = self._load_mock_interveiw_data(mock_data_path)
 
         # 프롬프트 템플릿 설정
         self.template = f'''
         You are an expert AI interviewer.
         Use the following resume to make a question in Korean:
-        {self.resume}
+        {{resume}}
 
         Here are example questions from a mock interview dataset:
         {self.example_questions}
@@ -47,9 +43,13 @@ class InterviewSession:
         3. Focus on the skills, experiences, or projects mentioned.
         4. Avoid repetition of previously generated questions.
         5. Be similar in style and detail to the examples provided.
+        6. Only provide one question at a time.
+        7. Be realistic and appropriate for a job interview setting.
+        8. Always follow this format: "질문: ~."
 
         Provide only the question, without any additional explanations or comments.
         '''
+        
         self.prompt = PromptTemplate(template=self.template, input_variables=['resume'])
         self.llm = OpenAI()
         self.llm_chain = LLMChain(prompt=self.prompt, llm=self.llm)
@@ -66,6 +66,14 @@ class InterviewSession:
         pdf_text = load_pdf_to_text(pdf_path)
         summarized_text = summarize_text(pdf_text, max_length=1500)
         return summarized_text
+    
+    def _load_mock_interview_data(self, csv_path):
+        if not csv_path or not os.path.exists(csv_path):
+            raise FileNotFoundError("모의 면접 데이터 파일이 존재하지 않습니다.")
+
+        examples = load_mock_interview_data(csv_path, num_examples=5)  # 예제 5개 로드
+        examples_text = "\n".join([f"{i+1}. {example}" for i, example in enumerate(examples)])
+        return examples_text
 
     async def generate_next_question(self):
         if self.question_index >= self.question_num:

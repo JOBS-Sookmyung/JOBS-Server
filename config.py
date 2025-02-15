@@ -1,3 +1,4 @@
+# 프로젝트 환경 설정을 중앙에서 관리하기 위한 파일
 import os
 from dotenv import load_dotenv
 

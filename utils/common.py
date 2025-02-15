@@ -25,7 +25,7 @@ def clean_files():
             os.remove(f.path)
     print("Clean files completed")
 
-# 이력서(PDF)에서 텍스트를 불러오는 함수
+# 이력서(PDF)에서 텍스트 추출하는 함수
 def load_pdf_to_text(pdf_path):
     text = ""
     reader = PdfReader(pdf_path)
@@ -33,13 +33,7 @@ def load_pdf_to_text(pdf_path):
         text += page.extract_text()
     return text
 
-# 텍스트 요약 함수 -> 수정
-'''def summarize_text(text, max_chars=1500):
-    """텍스트를 지정된 문자 수로 요약"""
-    if len(text) > max_chars:
-        return text[:max_chars] + "..."
-    return text'''
-
+# 추출한 텍스트 요약하는 함수
 def summarize_text(text, max_length=1000):
     client = openai.OpenAI(api_key=api_key)
     response = client.chat.completions.create(  # ✅ 최신 API 방식
@@ -53,8 +47,9 @@ def summarize_text(text, max_length=1000):
     summary = response.choices[0].message.content  # ✅ 최신 방식
     return summary
 
-# CSV 파일에서 모의 면접 데이터 읽기
+# CSV 파일에서 모의 면접 데이터 읽기 (프롬프트 예시를 위해)
 def load_mock_interview_data(csv_path, num_examples=2):
+    csv_path = "/Users/jeongsu-in/JOBS-Server-2/data/jobkorea.csv"
     df = pd.read_csv(csv_path)
     sample_data = df.sample(n=num_examples)
     examples = [

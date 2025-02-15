@@ -6,8 +6,9 @@ from fastapi import Response, Cookie
 from fastapi import File, Form, UploadFile
 # from pydantic import BaseModel
 from config import FILE_DIR, MAX_FSIZE
-from utils import echo
+from utils import echo, load_pdf_to_text
 import uuid
+import pdfplumber
 
 # 파일 목록 초기화
 pdf_files = dict()
@@ -46,7 +47,7 @@ async def upload_file(
     if fsize > MAX_FSIZE: # 50MB
         raise echo(
             status_code=413,
-            detail=f"Upload file too large (50MB limited): current size {fsize / (1024 * 1024):.2f}MB"
+            detail=f"파일 크기가 너무 큽니다. (50MB 제한): 현재 크기 {fsize / (1024 * 1024):.2f} MB"
         )
     
     # 입력받은 pdf 파일을 토큰으로 이름 저장
@@ -61,6 +62,13 @@ async def upload_file(
         SAVE_DIR = os.path.join(FILE_DIR, fname)
         with open(SAVE_DIR, "wb+") as fsave:
             fsave.write(content)
+        
+        # PDF 내용 추출 (resume_text 추가)
+        try:
+            with pdfplumber.open(SAVE_DIR) as pdf:
+                resume_text = "".join(page.extract_text() or "" for page in pdf.pages)
+        except Exception as e:
+            resume_text = "이력서를 가져오는데 실패했습니다."
 
     # 실패시
     except Exception as e:
@@ -69,6 +77,7 @@ async def upload_file(
     # 성공시
     else:
         pdf_files[token] = {
+            "resume_text" : resume_text, # 추후에 DB 연동하면서 수정될 수 있음
             "recruitUrl": recruitUrl,
             # "summaryText": summaryText,
             "recentDate": recentDate,

@@ -12,7 +12,6 @@ from langchain.chains import LLMChain
 from langchain.llms import OpenAI
 from config import FILE_DIR, API_KEY, PAFY_KEY
 from utils.common import load_pdf_to_text, summarize_text, safe_video, extract_video_text, vectorize_text, find_similar_videos
-#from google.colab import files
 
 pafy_key = PAFY_KEY
 api_key = API_KEY

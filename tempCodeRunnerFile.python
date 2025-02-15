@@ -1,0 +1,25 @@
+# 최대한 이모티콘 플러스 가입자수를 늘리는 것만 생각 (일단 생각)
+# 가입자수가 같은 경우에 금액까지 생각
+
+def solution(users, emoticons):
+    cus = 0     # 총 이모티콘 플러스 가입자 수
+    money = 0   # 총 수익
+    total = 0   # 구매하게 되는 총 가격 (예산과 비교하게 될 실제 구매비용)
+    for i in range(len(users)):
+        for j in emoticons:
+            total += (users[i][0] / 100) * j
+        if total > users[i][1]:
+            cus += 1        # 가입
+            money += 10300  # 플러스 가입 비용(고정값)
+        else:
+            money += total
+        total = 0   # 초기화
+        
+    answer = [cus, money]
+    return answer
+
+print(solution([[40, 10000], [25, 10000]], [7000, 9000]))
+
+'''sdf = [[40, 10000], [25, 10000]]
+for i in range(len(sdf)):
+    print(sdf[i][0] / 100)'''

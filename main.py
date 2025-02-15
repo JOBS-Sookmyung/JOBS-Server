@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import input, questions, answers
+from routers import input, questions, answers, recommendations
 from config import HOST, PORT, ORIGIN_REGEX
 from utils import clean_files
 import uvicorn, atexit
@@ -20,6 +20,7 @@ app.add_middleware(
 app.include_router(input)
 app.include_router(questions)
 app.include_router(answers)
+app.include_router(recommendations)
 
 # 종료 시 clean file 후 종료 설정
 if __name__ == "__main__":

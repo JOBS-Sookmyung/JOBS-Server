@@ -11,7 +11,7 @@ from utils import echo, InterviewSession
 # 인터뷰 세션 목록 초기화
 interview_sessions = {}
 
-# answers page에서
+# answers page에서 api 정의
 answers = APIRouter(prefix="/answers", tags=["answers"])
 
 

@@ -16,16 +16,11 @@ class InterviewSession:
     def __init__(self, token: str, question_num=5, mock_data_path=None):
         self.token = token
         self.question_num = question_num
-
         self.question_index = 0
         self.questions = []
         self.answers = []
-
-        # 이력서 텍스트 로드
-        self.resume = self._load_pdf_to_resume()
-
-        # 모의 면접 데이터 로드
-        self.mock_data_path = mock_data_path
+        self.resume = self._load_pdf_to_resume()    # 이력서 텍스트 로드
+        self.mock_data_path = mock_data_path        # 모의 면접 데이터 로드
         self.example_questions = self._load_mock_interveiw_data(mock_data_path)
 
         # 프롬프트 템플릿 설정
@@ -68,10 +63,10 @@ class InterviewSession:
         return summarized_text
     
     def _load_mock_interview_data(self, csv_path):
-        if not csv_path or not os.path.exists(csv_path):
-            raise FileNotFoundError("모의 면접 데이터 파일이 존재하지 않습니다.")
-
-        examples = load_mock_interview_data(csv_path, num_examples=5)  # 예제 5개 로드
+        if not csv_path is None:
+            csv_path = "/Users/jeongsu-in/JOBS-Server-2/data/jobkorea.csv" # 경로 설정해야함.
+        
+        examples = load_mock_interview_data(num_examples=2)  # 예제 5개 로드 (수정해야함)
         examples_text = "\n".join([f"{i+1}. {example}" for i, example in enumerate(examples)])
         return examples_text
 
@@ -83,7 +78,7 @@ class InterviewSession:
         self.questions.append(question)
         self.question_index += 1
         return {"index": self.question_index, "question": question}
-
+    # 비동기 함수 처리 
     async def add_answer(self, answer):
         self.answers.append(answer)
         self.resume += f"\n질문 {self.question_index}: {self.questions[-1]}\n답변 {self.question_index}: {answer}"

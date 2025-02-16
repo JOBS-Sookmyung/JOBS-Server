@@ -18,10 +18,37 @@ class InterviewSession:
         self.resume = self._load_pdf_to_resume()
         self.mock_data_path = mock_data_path
         self.example_questions = self._load_mock_interview_data(mock_data_path)
-
+        self.hint_requested = False     # 힌트 버튼 클릭 여부 상태
+        
+    async def generate_initial_questions(self):     # 최초 대표질문 5개 생성
+        for _ in range(self.question_num):
+            question = await self._generate_question()
+            self.questions.append(question)
+        return self.questions
+    
+    async def start_interview_session(self, question_index):    # 대표질문 하나를 클릭하면 시작되는 인터뷰 세션
+        self.current_question_index = question_index
+        question = self.questions[question_index]
+        print(f'📌 질문 {question_index + 1}: {question}')
+        for round_num in range(1, 4):
+            if self.hint_requested:
+                hint = await self.generate_hint(question)
+                print(f'💡 힌트: {hint}')
+                self.hint_requested = False     # 초기화
+            # 나머지 피드백, 꼬리질문은 무조건 생성
+            answer = input(f'📝 답변 {round_num}: ')
+            feedback = await self.generate_feedback(answer)
+            print(f'🗨️ 피드백: {feedback}')
+            question = await self.generate_follow_up_question(answer)
+            print(f'🔄 꼬리질문: {question}')
+    
+    def requst_hint(self):      # 힌트 버튼 누르면 호출해야 하는 함수 -> 나중에 힌트 버튼에 라우팅할 함수
+        self.hint_requested = True
+    
+    async def _generate_question(self):                     # 대표 질문 생성
         self.prompt = PromptTemplate(
             template=self._get_question_template(), 
-            input_variables=['resume']
+            input_variables=['resume'] 
             )
         self.llm = OpenAI(api_key=API_KEY)
         self.llm_chain = LLMChain(prompt=self.prompt, llm=self.llm)

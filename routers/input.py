@@ -63,12 +63,8 @@ async def upload_file(
         with open(SAVE_DIR, "wb+") as fsave:
             fsave.write(content)
         
-        # PDF 내용 추출 (resume_text 추가)
-        try:
-            with pdfplumber.open(SAVE_DIR) as pdf:
-                resume_text = "".join(page.extract_text() or "" for page in pdf.pages)
-        except Exception as e:
-            resume_text = "이력서를 가져오는데 실패했습니다."
+        # PDF에서 텍스트 추출
+        resume_text = load_pdf_to_text(SAVE_DIR)
 
     # 실패시
     except Exception as e:
@@ -88,4 +84,3 @@ async def upload_file(
     # 파일 닫기
     finally:
         await file.close()
-

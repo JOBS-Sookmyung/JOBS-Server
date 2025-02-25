@@ -5,7 +5,7 @@ import whisper
 import yt_dlp
 import pandas as pd
 from sentence_transformers import SentenceTransformer
-from pymongo import MongoClient
+# from pymongo import MongoClient
 from routers.input import pdf_files
 
 youtube_data = [
@@ -102,13 +102,6 @@ embeddings = model.encode(video_texts, convert_to_numpy=True)  # 벡터화
 d = embeddings.shape[1]
 index = faiss.IndexFlatL2(d)
 index.add(embeddings)
-
-def search_videos(query, top_k=3):
-        """ 사용자가 입력한 검색어와 가장 유사한 영상을 추천 """
-        query_embedding = model.encode([query], convert_to_numpy=True)  # 검색어 벡터화
-        D, I = index.search(query_embedding, top_k)  # FAISS 검색
-        results = [youtube_data[i] for i in I[0]]  # 검색된 영상 반환
-        return results
 
 # 이력서 기반 영상 추천 시스템
 class RecommendVideo:

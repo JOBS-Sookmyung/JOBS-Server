@@ -1,5 +1,5 @@
-# pip install openai-whisper, openai, spacy, yt-dlp, youtube-dl, pafy, google.colab
-# brew install ffmpeg -> bash 셀에서 해야함 (pip으로 하면 안됌, 하단 부분 터미널 주의(zsh 말고 bash)
+# pip install openai-whisper, openai, spacy, yt-dlp, youtube-dl, pafy
+# brew install ffmpeg -> bash 셀에서 해야함 (pip으로 하면 안됌, 하단 부분 터미널 주의(zsh 말고 bash))
 import os
 import pandas as pd
 import whisper
@@ -27,7 +27,7 @@ def safe_video(self):
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
             'preferredquality': '192',  # 음질 설정 (128, 192, 320kbps)
-        }],
+        }]
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -41,25 +41,20 @@ def extract_video_text(self):
     print(output)
 
 class RecommendVideo:
-    """
-    사용자의 이력서를 기반으로 유사한 유튜브 영상을 추천하는 시스템.
-    """
     def __init__(self, token: str, video_database: pd.DataFrame, top_n=6):
         self.token = token 
         self.video_database = video_database
         self.top_n = top_n
-        self.resume_text = self._extract_resume_text(token) # token 값을 입력하면 자동으로 해당 토큰의 PDF 불러오기
+        self.resume_text = self._extract_resume_text(token)     # token 값을 입력하면 자동으로 해당 토큰의 PDF 불러오기
         self.resume_vector = vectorize_text(self.resume_text)
     
     def _extract_resume_text(self):
-        """사용자가 입력한 이력서에서 텍스트를 추출."""
         if not os.path.exists(self.resume_path):
             raise FileNotFoundError("해당 경로에 이력서 파일이 존재하지 않습니다.")
         resume_text = load_pdf_to_text(self.resume_path)
         return summarize_text(resume_text, max_length=1500)
     
     def recommend_videos(self):
-        """유사도가 높은 유튜브 영상 추천."""
         video_vectors = self.video_database['transcript'].apply(vectorize_text)
         recommendations = find_similar_videos(self.resume_vector, video_vectors, self.top_n)
         return self.video_database.iloc[recommendations]

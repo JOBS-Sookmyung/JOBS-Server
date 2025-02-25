@@ -8,63 +8,8 @@ from sentence_transformers import SentenceTransformer
 # from pymongo import MongoClient
 from routers.input import pdf_files
 
-youtube_data = [
-    {"id": 1, "title": "14년차 UX/UI 디자이너가 말하는 절대 피해야하는 탈락각 포트폴리오", "url": "https://youtu.be/uYjXlhrHr_4?si=yoquZuSIMKibBA5c", "video_id": "uYjXlhrHr_4"},
-    {"id": 2, "title": "Machine Learning Basics", "url": "https://youtu.be/abc456", "video_id": "abc456"},
-    {"id": 3, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 4, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 5, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 6, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 7, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 8, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 9, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 10, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 11, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 12, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 13, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 14, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 15, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 16, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 17, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 18, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 19, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 20, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 21, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 22, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 23, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 24, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 25, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 26, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 27, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 28, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 29, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 30, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 31, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 32, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 33, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 34, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 35, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 36, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 37, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 38, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 39, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 40, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 41, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 42, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 43, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 44, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 45, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 46, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 47, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 48, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 49, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 50, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 51, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"},
-    {"id": 52, "title": "Introduction to MongoDB", "url": "https://youtu.be/mongo789", "video_id": "mongo789"}
-]
-
-with open("youtube_data.json", "w") as f:
-        json.dump(youtube_data, f, indent=4)
+with open("youtube_data.json", "r") as f:
+        youtube_data = json.load(f)
 
 # 비디오 오디오 추출
 def save_video_audio(url, filename):

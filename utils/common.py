@@ -7,6 +7,7 @@ import pandas as pd
 from PyPDF2 import PdfReader
 from config import API_KEY
 import openai
+import re
 
 api_key = API_KEY
 
@@ -57,3 +58,23 @@ def load_mock_interview_data(csv_path, num_examples=2):
         for _, row in sample_data.iterrows()
     ]
     return examples
+
+def extract_video_id(youtube_url):
+    # 다양한 유튜브 URL 패턴 대응
+    patterns = [
+        r"v=([a-zA-Z0-9_-]+)",  # 일반적인 URL (https://www.youtube.com/watch?v=영상ID)
+        r"youtu\.be/([a-zA-Z0-9_-]+)",  # 단축 URL (https://youtu.be/영상ID)
+        r"embed/([a-zA-Z0-9_-]+)"  # 임베드 URL (https://www.youtube.com/embed/영상ID)
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, youtube_url)
+        if match:
+            return match.group(1)  # video_id 추출
+
+    return "유효한 유튜브 링크가 아닙니다."
+
+# 테스트
+youtube_url = "https://youtu.be/iZDQzbKUy3M?si=yaCp1Ybv8TSUMPJa"
+rink = "https://youtu.be/uYjXlhrHr_4?si=7o-0nMwNscn9c6kn"
+video_id = extract_video_id(rink)
+print(f"Extracted video_id: {video_id}")  # 기대 결과: iZDQzbKUy3M

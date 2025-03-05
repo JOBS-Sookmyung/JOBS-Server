@@ -1,3 +1,4 @@
+import os
 import json
 import faiss
 import numpy as np
@@ -6,10 +7,18 @@ import yt_dlp
 import pandas as pd
 from sentence_transformers import SentenceTransformer
 # from pymongo import MongoClient
-from routers.input import pdf_files
+from routers.pdf_storage import pdf_files  # ✅ pdf_files를 직접 불러오도록 변경
 
-with open("youtube_data.json", "r") as f:
+# 현재 파일의 경로를 기준으로 youtube_data.json 파일 경로 설정
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))  # utils 폴더 위치
+YOUTUBE_DATA_PATH = os.path.join(BASE_DIR, "../youtube_data.json")  # 상위 폴더로 접근
+
+# json 파일 로드
+try:
+    with open(YOUTUBE_DATA_PATH, "r") as f:
         youtube_data = json.load(f)
+except FileNotFoundError:
+    raise FileNotFoundError(f"❌ ERROR: '{YOUTUBE_DATA_PATH}' 파일을 찾을 수 없습니다.")
 
 # 비디오 오디오 추출
 def save_video_audio(url, filename):
@@ -75,11 +84,11 @@ class RecommendVideo:
         return recommendations
 
 # 실행
-if __name__ == "__main__":
+'''if __name__ == "__main__":
     # 이력서 기반 추천 실행
     recommender = RecommendVideo("Ari Kim")  # ✅ 이력서 내용 가져오기
     recommended_videos = recommender.recommend_videos()
 
     print("Recommended Videos based on Resume:")
     for video in recommended_videos:
-        print(video["title"], "-", video["url"])
+        print(video["title"], "-", video["url"])'''

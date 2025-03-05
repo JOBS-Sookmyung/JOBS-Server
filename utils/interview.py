@@ -2,8 +2,8 @@ import os
 import pandas as pd
 from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
-from langchain.llms import OpenAI
-from routers import pdf_files
+from langchain_community.llms import OpenAI
+from routers.pdf_storage import pdf_files  # ✅ pdf_files를 직접 불러오도록 변경
 from config import FILE_DIR
 from utils.common import load_pdf_to_text, summarize_text, load_mock_interview_data
 from config import API_KEY
@@ -20,13 +20,13 @@ class InterviewSession:
         self.example_questions = self._load_mock_interview_data(mock_data_path)
         self.hint_requested = False     # 힌트 버튼 클릭 여부 상태
         
-    async def generate_initial_questions(self):     # 최초 대표질문 5개 생성
+    async def generate_initial_questions(self):     # 최초 대표질문 5개 생성 -> 라우팅할 함수
         for _ in range(self.question_num):
             question = await self._generate_question()
             self.questions.append(question)
         return self.questions
     
-    async def start_interview_session(self, question_index):    # 대표질문 하나를 클릭하면 시작되는 인터뷰 세션
+    async def start_interview_session(self, question_index):    # 대표질문 하나를 클릭하면 시작되는 인터뷰 세션 -> 라우팅할 함수
         self.current_question_index = question_index
         question = self.questions[question_index]
         print(f'📌 질문 {question_index + 1}: {question}')

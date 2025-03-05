@@ -8,7 +8,7 @@ from fastapi import File, Form, UploadFile
 from config import FILE_DIR, MAX_FSIZE
 from utils import echo, load_pdf_to_text
 import uuid
-import pdfplumber
+from routers.pdf_storage import pdf_files
 
 # 파일 목록 초기화
 pdf_files = dict()

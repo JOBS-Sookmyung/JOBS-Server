@@ -10,8 +10,7 @@ from sentence_transformers import SentenceTransformer
 from routers.pdf_storage import pdf_files  # ✅ pdf_files를 직접 불러오도록 변경
 
 # 현재 파일의 경로를 기준으로 youtube_data.json 파일 경로 설정
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))  # utils 폴더 위치
-YOUTUBE_DATA_PATH = os.path.join(BASE_DIR, "../youtube_data.json")  # 상위 폴더로 접근
+YOUTUBE_DATA_PATH = os.path.join(os.path.dirname(__file__), "youtube_data.json")
 
 # json 파일 로드
 try:

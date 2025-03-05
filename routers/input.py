@@ -26,14 +26,13 @@ async def reload_form(token: str = Cookie(None)):
     return pdf_files[token]
 
 
-# 업로드 된 파일과 공고주소를 토큰에 저장함
+# 업로드 된 파일과 공고주소를 토큰에 저장함 -> 엔드포인트 (Inputmodal)
 @input.post("/uploadfile/")
 async def upload_file(
     res: Response,
     token: str = Cookie(None),
     file: UploadFile = File(),
     recruitUrl: str = Form(),
-    # summaryText: str = Form(),
     recentDate: str = Form()
 ):
     if not token:
@@ -44,7 +43,9 @@ async def upload_file(
     content = await file.read()
 
     fsize = len(content)
-    if fsize > MAX_FSIZE: # 50MB
+    print(f"업로드된 파일 크기: {fsize / (1024 * 1024):.2f} MB")  # 로그 추가
+    
+    if fsize > MAX_FSIZE:  # 50MB
         raise echo(
             status_code=413,
             detail=f"파일 크기가 너무 큽니다. (50MB 제한): 현재 크기 {fsize / (1024 * 1024):.2f} MB"
@@ -52,10 +53,13 @@ async def upload_file(
     
     # 입력받은 pdf 파일을 토큰으로 이름 저장
     fname = f"{token}.pdf"
-
+    
+    print(f"파일 이름: {fname}")  # 로그 추가
+    
     # 파일 경로가 있는지 확인 후 없으면 경로 생성
     if not os.path.exists(FILE_DIR):
-        os.makedirs(name=FILE_DIR, exist_ok=True)
+        os.makedirs(FILE_DIR, exist_ok=True)
+        print(f"파일 디렉토리 생성됨: {FILE_DIR}")  # 로그 추가
 
     # 파일 열고 저장 시도
     try:
@@ -65,22 +69,23 @@ async def upload_file(
         
         # PDF에서 텍스트 추출
         resume_text = load_pdf_to_text(SAVE_DIR)
+        print(f"PDF 텍스트 추출 완료: {resume_text[:100]}...")  # 로그 추가
 
-    # 실패시
     except Exception as e:
+        print(f"파일 저장 실패: {e}")  # 로그 추가
         raise echo(status_code=500, detail=str(e))
     
-    # 성공시
+    # 성공 시
     else:
         pdf_files[token] = {
-            "resume_text" : resume_text, # 추후에 DB 연동하면서 수정될 수 있음
+            "resume_text" : resume_text,  # 추후에 DB 연동하면서 수정될 수 있음
             "recruitUrl": recruitUrl,
-            # "summaryText": summaryText,
             "recentDate": recentDate,
         }
-        print(pdf_files)
+        print(f"pdf_files 업데이트: {pdf_files}")  # 로그 추가
         return {"message": f"Upload file saved successfully: \"{fname}\" to \"{FILE_DIR}\""}
     
     # 파일 닫기
     finally:
         await file.close()
+

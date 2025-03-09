@@ -16,6 +16,8 @@ MAX_FSIZE = 50 * 1024 * 1024 # 50MB
 # .env 파일 로드
 load_dotenv()
 
-# .env에서 가져온 api key
-API_KEY = os.getenv("api_key")
-PAFY_KEY = os.getenv("pafy_key")
+SQL_URL = os.getenv("SQL_URL")
+NOSQL_URL = os.getenv("NOSQL_URL")
+
+API_KEY = os.getenv("API_KEY")
+PAFY_KEY = os.getenv("PAFY_KEY")

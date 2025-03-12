@@ -33,7 +33,7 @@ async def upload_file(
     token: str = Cookie(None),
     file: UploadFile = File(),
     recruitUrl: str = Form(),
-    recentDate: str = Form()
+    # recentDate: str = Form()
 ):
     if not token:
         # 유니크한 토큰 설정
@@ -80,7 +80,7 @@ async def upload_file(
         pdf_files[token] = {
             "resume_text" : resume_text,  # 추후에 DB 연동하면서 수정될 수 있음
             "recruitUrl": recruitUrl,
-            "recentDate": recentDate,
+            # "recentDate": recentDate,
         }
         print(f"pdf_files 업데이트: {pdf_files}")  # 로그 추가
         return {"message": f"Upload file saved successfully: \"{fname}\" to \"{FILE_DIR}\""}

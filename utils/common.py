@@ -74,7 +74,7 @@ def extract_video_id(youtube_url):
     return "유효한 유튜브 링크가 아닙니다."
 
 # 테스트
-youtube_url = "https://youtu.be/iZDQzbKUy3M?si=yaCp1Ybv8TSUMPJa"
-rink = "https://youtu.be/uYjXlhrHr_4?si=7o-0nMwNscn9c6kn"
+# youtube_url = "https://youtu.be/iZDQzbKUy3M?si=yaCp1Ybv8TSUMPJa"
+rink = "https://youtu.be/4ry9mBEgNA4?si=hmnHqxZmNXSU35r5"
 video_id = extract_video_id(rink)
 print(f"Extracted video_id: {video_id}")  # 기대 결과: iZDQzbKUy3M

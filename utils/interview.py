@@ -16,6 +16,10 @@ class InterviewSession:
         self.db = db
         self.pdf_path = pdf_path
         self.url = url
+        self.question_num = 5  # 총 대표질문 수
+        self.answer_per_question = 5  # 각 대표질문당 꼬리질문 수
+        self.current_main = 0  # 현재 대표질문 인덱스
+        self.current_follow_up = 0  # 현재 꼬리질문 인덱스
         self.llm = OpenAI(api_key=API_KEY)
         self.resume_summary = self._process_input()
 
@@ -113,3 +117,12 @@ class InterviewSession:
         Analyze the following answer and provide a structured feedback with clarity and relevance scores (1-5).
         Answer: {answer}
         """
+
+    def get_current_state(self) -> dict:
+        """현재 인터뷰 진행 상태를 반환"""
+        return {
+            "current_main": self.current_main,
+            "current_follow_up": self.current_follow_up,
+            "total_main": self.question_num,
+            "total_follow_up": self.answer_per_question
+        }

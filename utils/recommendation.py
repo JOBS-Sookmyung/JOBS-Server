@@ -34,6 +34,11 @@ class RecommendVideo:
         # FAISS 인덱스를 이용한 검색
         D, I = self.index.search(self.resume_vector, self.top_n)
         
-        # 추천 영상 리스트
-        recommendations = [self.video_database.iloc[i] for i in I[0]]  
+        recommendations = []
+        for idx in I[0]:
+            video_info = self.video_database.iloc[idx]  # 영상 정보 가져오기
+            video_id = video_info["id"]  # 영상 ID 가져오기 (영상 데이터에 id 열이 있어야 함)
+            video_title = video_info["title"]
+            recommendations.append({"id": video_id, "title": video_title})  
+            
         return recommendations

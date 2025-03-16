@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  sql:
+    image: mysql:8.0
+    container_name: jobs_mysql_v2_0309
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: jobs
+      MYSQL_USER: user
+      MYSQL_PASSWORD: password
+    ports:
+      - "3307:3306"
+    volumes:
+      - databases:/var/lib/mysql
+
+  # app:
+  #   build: .
+  #   container_name: jobs_app
+  #   ports:
+  #     - "8080:8080"
+  #   depends_on:
+  #     - mysql
+  #   environment: # using with .env file
+  #     - SQL_URL=${SQL_URL}
+  #     - API_KEY=${API_KEY}
+
+volumes:
+  databases:

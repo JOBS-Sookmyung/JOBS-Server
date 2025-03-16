@@ -20,15 +20,12 @@ class TokenManager:
     # def add(self, token):
     #    self.tokens.append(token)
 
-@staticmethod
-def is_valid(token):
-    if not token:
-        raise echo(400, "토큰이 필요합니다.")
-
-    if token not in pdf_files:
-        raise echo(404, "해당 토큰에 대한 PDF 파일이 존재하지 않습니다.")
-
-    return True
+    @staticmethod
+    def is_valid(token: str) -> bool:
+        """토큰 유효성 검사"""
+        if not token:
+            return False
+        return True
 
 
 # chat page에서 api 정의
@@ -40,9 +37,18 @@ async def start_interview(token: str = Cookie(None), db: Session = Depends(get_d
     if not TokenManager.is_valid(token):
         return {"message": "토큰 검증 오류"}
 
-    # 기존 세션 데이터 삭제
-    db.query(FollowUpDB).filter_by(session_token=token).delete()
-    db.query(MainQuestionDB).filter_by(session_token=token).delete()
+    # 기존 세션 찾기
+    current_session = db.query(InterviewSessionDB).filter_by(session_token=token).first()
+    if current_session:
+        # 기존 세션의 꼬리질문들 삭제
+        main_questions = db.query(MainQuestionDB).filter_by(session_id=current_session.id).all()
+        for main_q in main_questions:
+            db.query(FollowUpDB).filter_by(main_question_id=main_q.id).delete()
+        # 기존 메인 질문들 삭제
+        db.query(MainQuestionDB).filter_by(session_id=current_session.id).delete()
+        # 기존 세션 삭제
+        db.delete(current_session)
+        db.commit()
 
     # 새 세션 생성
     pdf_files[token]["session"] = InterviewSession(token=token)

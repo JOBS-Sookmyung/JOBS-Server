@@ -3,16 +3,13 @@ import uuid
 from fastapi import APIRouter, Response, Cookie, File, Form, UploadFile, HTTPException
 from config import FILE_DIR, MAX_FSIZE
 from utils import echo, load_pdf_to_text
-from routers.pdf_storage import pdf_files
+from routers.pdf_storage import pdf_files, add_pdf
 
 # Ensure the FILE_DIR exists
 if not os.path.exists(FILE_DIR):
     os.makedirs(FILE_DIR, exist_ok=True)
 
 input = APIRouter(prefix="/input", tags=["input"])
-
-# 파일 목록 초기화
-pdf_files = {}
 
 @input.get("/")
 async def reload_form(token: str = Cookie(None)):
@@ -59,17 +56,17 @@ async def upload_file(
     finally:
         await file.close()
 
-    # Store data in memory (consider using a database)
-    pdf_files[token] = {
+    # Store data in memory using pdf_storage
+    pdf_data = {
         "resume_text": resume_text,
         "recruitUrl": recruitUrl,
     }
+    add_pdf(token, pdf_data)
 
-    print("저장된 데이터:", pdf_files[token])
-
-    # React에서 처리할 URL 반환 (chat 페이지로 이동)
+    print(f"✅ 파일 업로드 완료 - 토큰: {token}")
+    
     return {
         "message": "파일 업로드 성공!",
         "token": token,
-        "redirect_url": f"/chat?token={token}"  # 프론트엔드에서 chat.js로 이동하는 URL 반환
+        "redirect_url": f"/chat?token={token}"
     }

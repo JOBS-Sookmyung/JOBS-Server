@@ -6,6 +6,7 @@ from utils import clean_files
 from routers.login import router as login_router
 from db import create_tables
 from routers.chat import chat
+from routers.recommendations import recommendations  # 추가
 import uvicorn
 import atexit
 import asyncio
@@ -29,6 +30,7 @@ app.add_middleware(
 app.include_router(input)
 app.include_router(chat)
 app.include_router(login_router, prefix="", tags=["auth"])
+app.include_router(recommendations)  # 추가
 
 """ # 서버 시작 시 영상 추출 및 벡터화 작업 실행 -> 미리 영상들을 벡터 디비에 다 넣어놓고 서버 시작
 @app.on_event("startup")

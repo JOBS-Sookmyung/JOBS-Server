@@ -1,7 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import input
-# from routers import recommendations
+from routers import input  # questions 제거
 from config import HOST, PORT, ORIGIN_REGEX
 from utils import clean_files
 from routers.login import router as login_router
@@ -28,9 +27,7 @@ app.add_middleware(
 
 # 라우트 설정
 app.include_router(input)
-
 app.include_router(chat)
-# app.include_router(recommendations)
 app.include_router(login_router, prefix="", tags=["auth"])
 
 """ # 서버 시작 시 영상 추출 및 벡터화 작업 실행 -> 미리 영상들을 벡터 디비에 다 넣어놓고 서버 시작

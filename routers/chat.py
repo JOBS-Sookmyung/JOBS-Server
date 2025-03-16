@@ -1,152 +1,309 @@
-from fastapi import APIRouter, Cookie, Form, Depends, UploadFile, Query
-from sqlalchemy.orm import Session
-from db import get_db, InterviewSessionDB, MainQuestionDB, FollowUpDB, ChatLogDB
-from utils import InterviewSession
-import os
-from config import FILE_DIR
+import os, sys
 
+sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
+
+from fastapi import APIRouter
+from fastapi import Response, Cookie, Form, Depends
+
+# from pydantic import BaseModel
+from routers import pdf_files
+from db import get_db, InterviewSessionDB, MainQuestionDB, FollowUpDB  # db.py에서 직접 import
+from utils import echo, InterviewSession
+from sqlalchemy.orm import Session
+
+
+class TokenManager:
+    def __init__(self):
+        # self.tokens = []
+        pass
+
+    # def add(self, token):
+    #    self.tokens.append(token)
+
+@staticmethod
+def is_valid(token):
+    if not token:
+        raise echo(400, "토큰이 필요합니다.")
+
+    if token not in pdf_files:
+        raise echo(404, "해당 토큰에 대한 PDF 파일이 존재하지 않습니다.")
+
+    return True
+
+
+# chat page에서 api 정의
 chat = APIRouter(prefix="/chat", tags=["chat"])
 
-@chat.post("/")
-async def start_interview(
-    token: str = Cookie(None),
-    file: UploadFile = None,
-    url: str = Form(None),
-    db: Session = Depends(get_db)
-):
-    if not token:
-        return {"message": "토큰이 필요합니다."}
-    
-    pdf_path = None
-    if file:
-        pdf_path = os.path.join(FILE_DIR, f"{token}.pdf")
-        with open(pdf_path, "wb") as buffer:
-            buffer.write(file.file.read())
-    
-    session = db.query(InterviewSessionDB).filter_by(session_token=token).first()
-    if not session:
-        session = InterviewSessionDB(session_token=token)
-        db.add(session)
-        db.commit()
-    
-    # 메인 질문 생성
-    interview = InterviewSession(token, pdf_path=pdf_path, url=url, db=db)
-    main_question = await interview.generate_main_question()
-    
-    new_main_question = MainQuestionDB(session_id=session.id, content=main_question)
-    db.add(new_main_question)
-    db.commit()
-    
-    return {"type": "main", "question": main_question}
 
-@chat.post("/q")
-async def handle_answer(answer: str = Form(...), token: str = Cookie(None), db: Session = Depends(get_db)):
-    if not token:
-        return {"message": "토큰이 필요합니다."}
-    
-    session = db.query(InterviewSessionDB).filter_by(session_token=token).first()
-    if not session:
-        return {"message": "세션이 존재하지 않습니다."}
-    
-    main_question = db.query(MainQuestionDB)\
-        .filter_by(session_id=session.id)\
-        .order_by(MainQuestionDB.id.desc()).first()
-    if not main_question:
-        return {"message": "대표질문이 존재하지 않습니다."}
-    
-    interview = InterviewSession(token, db=db)
-    follow_up_question = await interview.generate_follow_up(answer)
-    hint = await interview.generate_hint(follow_up_question)
-    feedback, clarity_score, relevance_score = await interview.generate_feedback(answer)
-    
-    new_follow_up = FollowUpDB(
-        main_question_id=main_question.id,
-        session_id=session.id,
-        content=follow_up_question,
-        answer=answer,
-        hint=hint,
-        feedback=feedback,
-        clarity_score=clarity_score,
-        relevance_score=relevance_score
-    )
-    db.add(new_follow_up)
+@chat.get("/")
+async def start_interview(token: str = Cookie(None), db: Session = Depends(get_db)):
+    if not TokenManager.is_valid(token):
+        return {"message": "토큰 검증 오류"}
+
+    # 기존 세션 데이터 삭제
+    db.query(FollowUpDB).filter_by(session_token=token).delete()
+    db.query(MainQuestionDB).filter_by(session_token=token).delete()
+
+    # 새 세션 생성
+    pdf_files[token]["session"] = InterviewSession(token=token)
+    session = pdf_files[token]["session"]
+    new_session = InterviewSessionDB(session_token=token)
+    db.add(new_session)
     db.commit()
-    
-    chat_log = ChatLogDB(
-        session_id=session.id,
-        question_id=new_follow_up.id,
-        user_message=answer,
-        system_response=follow_up_question
-    )
-    db.add(chat_log)
-    db.commit()
-    
+
+    # 첫 대표질문 생성
+    first_question = await session.generate_main_question()
     return {
-        "type": "follow_up",
-        "question": follow_up_question,
-        "hint": hint,
-        "feedback": feedback,
-        "scores": {
-            "clarity": clarity_score,
-            "relevance": relevance_score
-        }
+        "type": "main",
+        "index": 0,
+        "question": first_question,
+        "progress": session.get_current_state(),
     }
 
-@chat.post("/end_session")
-async def end_session(token: str = Cookie(None), db: Session = Depends(get_db)):
-    if not token:
-        return {"message": "토큰이 필요합니다."}
+
+
+@chat.post("/q")
+async def handle_answer(
+    answer: str = Form(),
+    token: str = Cookie(None),
+    db: Session = Depends(get_db),
+):
+    if not TokenManager.is_valid(token):
+        return {"message": "토큰 검증 오류가 발생하였습니다."}
+
+    if not answer:
+        raise echo(400, "답변이 비어있습니다.")
     
-    session = db.query(InterviewSessionDB).filter_by(session_token=token).first()
-    if not session:
-        return {"message": "세션이 존재하지 않습니다."}
-    
-    session.ended = True
+    # 세션 존재 여부 확인
+    if "session" not in pdf_files[token]:
+        raise echo(404, "세션이 존재하지 않습니다. 먼저 /chat/를 호출해주세요.")
+
+    session = pdf_files[token]["session"]
+    current_session_db = db.query(InterviewSessionDB).filter_by(session_token=token).first()
+    if not current_session_db:
+        raise echo(404, "DB 상에서 세션을 찾을 수 없습니다.")
+
+    # 사용자 답변을 채팅 로그에 저장
+    log = ChatLogDB(
+        session_id=current_session_db.id,
+        user_message=answer
+    )
+    db.add(log)
     db.commit()
-    
-    return {"message": "세션이 종료되었습니다."}
+    db.refresh(log)
 
-@chat.get("/history")
-async def get_chat_history(token: str = Cookie(None), db: Session = Depends(get_db)):
-    """
-    특정 세션 토큰의 채팅 로그를 조회
-    """
-    if not token:
-        return {"message": "토큰이 필요합니다."}
+    # 아직 대표질문을 모두 소화하지 않았다면
+    if session.current_main < session.question_num:
+        # 현재 대표질문 DB 객체
+        main_q_db_list = (
+            db.query(MainQuestionDB)
+            .filter_by(session_id=current_session_db.id)
+            .order_by(MainQuestionDB.id)
+            .all()
+        )
+        if len(main_q_db_list) <= session.current_main:
+            raise echo(404, "현재 대표질문이 DB에 없습니다.")
+
+        current_main_question = main_q_db_list[session.current_main]
+
+        # 꼬리질문 생성 가능 여부
+        if session.current_follow_up < session.answer_per_question - 1:
+            # 꼬리질문 생성
+            next_q = await session.generate_follow_up(answer)
+            session.current_follow_up += 1
+
+            # 생성된 꼬리질문을 DB 저장
+            follow_up_db = FollowUpDB(
+                main_question_id=current_main_question.id,
+                content=next_q
+            )
+            db.add(follow_up_db)
+            db.commit()
+            db.refresh(follow_up_db)
+
+            # 채팅 로그에 시스템 응답(꼬리질문) 기록
+            log.system_response = next_q
+            db.add(log)
+            db.commit()
+
+            return {
+                "type": "follow_up",
+                "main_idx": session.current_main,
+                "follow_idx": session.current_follow_up,
+                "question": next_q,
+                "progress": session.get_current_state(),
+            }
+        else:
+            # 꼬리질문 5개가 모두 끝났으므로 다음 대표질문으로 이동
+            session.current_main += 1
+            session.current_follow_up = 0
+
+            # 5개의 대표질문을 모두 소화했는지 확인
+            if session.current_main >= session.question_num:
+                current_session_db.status = "finished"
+                db.add(current_session_db)
+                db.commit()
+                return {"status": "인터뷰가 완료되었습니다."}
+
+            # 다음 대표질문 생성
+            next_main_q = await session.generate_main_question()
+            if next_main_q is None:
+                # 더 이상 질문을 생성하지 못하면 세션 종료
+                current_session_db.status = "finished"
+                db.add(current_session_db)
+                db.commit()
+                return {"status": "인터뷰가 완료되었습니다."}
+
+            # 새 대표질문을 DB에 저장
+            new_main_question_db = MainQuestionDB(
+                session_id=current_session_db.id,
+                content=next_main_q
+            )
+            db.add(new_main_question_db)
+            db.commit()
+            db.refresh(new_main_question_db)
+
+            # 채팅 로그에 시스템 응답(새 대표질문) 기록
+            log.system_response = next_main_q
+            db.add(log)
+            db.commit()
+
+            return {
+                "type": "main",
+                "index": session.current_main,
+                "question": next_main_q,
+                "progress": session.get_current_state(),
+            }
+    else:
+        # 이미 5개 대표질문을 완료한 상태
+        current_session_db.status = "finished"
+        db.add(current_session_db)
+        db.commit()
+        return {"status": "인터뷰가 완료되었습니다."}
+
+
+
+@chat.get("/hint")
+async def get_hint(
+    main_idx: int,
+    follow_idx: int,
+    token: str = Cookie(None),
+    db: Session = Depends(get_db),
+):
+    TokenManager.is_valid(token)
+    if "session" not in pdf_files[token]:
+        raise echo(404, "세션이 존재하지 않습니다.")
     
-    session = db.query(InterviewSessionDB).filter_by(session_token=token).first()
-    if not session:
-        return {"message": "세션이 존재하지 않습니다."}
-    
-    chat_logs = db.query(ChatLogDB)\
-        .filter_by(session_id=session.id)\
-        .order_by(ChatLogDB.timestamp)\
+    session = pdf_files[token]["session"]
+    current_session_db = db.query(InterviewSessionDB).filter_by(session_token=token).first()
+    if not current_session_db:
+        raise echo(404, "DB 상에서 세션을 찾을 수 없습니다.")
+
+    # main_idx에 해당하는 MainQuestionDB 객체를 찾아 꼬리질문
+    main_questions = (
+        db.query(MainQuestionDB)
+        .filter_by(session_id=current_session_db.id)
+        .order_by(MainQuestionDB.id)
         .all()
-    
-    history = [
-        {
-            "timestamp": log.timestamp,
-            "user_message": log.user_message,
-            "system_response": log.system_response
-        }
-        for log in chat_logs
-    ]
-    
-    return {"history": history}
+    )
+    if main_idx >= len(main_questions):
+        raise echo(404, "해당 메인질문이 없습니다.")
 
-@chat.get("/ended_sessions")
-async def get_ended_sessions(db: Session = Depends(get_db)):
-    """
-    종료된(ended=True) 세션 목록 반환
-    """
-    ended_sessions = db.query(InterviewSessionDB).filter_by(ended=True).all()
-    # 필요에 맞게 데이터 변환
-    results = []
-    for s in ended_sessions:
-        results.append({
-            "id": s.id,
-            "session_token": s.session_token,
-            "created_at": s.created_at,  # DB에 필드가 있다면
-            "updated_at": s.updated_at,  # DB에 필드가 있다면
-        })
-    return {"sessions": results}
+    target_main_question = main_questions[main_idx]
+    follow_ups = (
+        db.query(FollowUpDB)
+        .filter_by(main_question_id=target_main_question.id)
+        .order_by(FollowUpDB.id)
+        .all()
+    )
+    if follow_idx >= len(follow_ups):
+        raise echo(404, "해당 꼬리질문이 없습니다.")
+
+    target_follow_up = follow_ups[follow_idx]
+
+    # 이미 hint가 DB에 있으면 그대로 사용
+    if target_follow_up.hint:
+        return {"hint": target_follow_up.hint}
+
+    # 없다면 interview.py에서 생성
+    hint_text = await session.generate_hint(target_follow_up.content)
+    # DB 저장
+    target_follow_up.hint = hint_text
+    db.add(target_follow_up)
+    db.commit()
+
+    return {"hint": hint_text}
+
+
+@chat.get("/feedback")
+async def get_feedback(
+    main_idx: int,
+    follow_idx: int,
+    token: str = Cookie(None),
+    db: Session = Depends(get_db),
+):
+    TokenManager.is_valid(token)
+    if "session" not in pdf_files[token]:
+        raise echo(404, "세션이 존재하지 않습니다.")
+    
+    session = pdf_files[token]["session"]
+    current_session_db = db.query(InterviewSessionDB).filter_by(session_token=token).first()
+    if not current_session_db:
+        raise echo(404, "DB 상에서 세션을 찾을 수 없습니다.")
+
+    main_questions = (
+        db.query(MainQuestionDB)
+        .filter_by(session_id=current_session_db.id)
+        .order_by(MainQuestionDB.id)
+        .all()
+    )
+    if main_idx >= len(main_questions):
+        raise echo(404, "해당 메인질문이 없습니다.")
+
+    target_main_question = main_questions[main_idx]
+    follow_ups = (
+        db.query(FollowUpDB)
+        .filter_by(main_question_id=target_main_question.id)
+        .order_by(FollowUpDB.id)
+        .all()
+    )
+    if follow_idx >= len(follow_ups):
+        raise echo(404, "해당 꼬리질문이 없습니다.")
+
+    target_follow_up = follow_ups[follow_idx]
+
+    # 사용자가 이미 답변을 작성했다고 가정
+    if not target_follow_up.answer:
+        return {"feedback": "아직 답변이 기록되지 않았습니다."}
+
+    # 이미 feedback이 있다면 그대로 사용
+    if target_follow_up.feedback:
+        return {
+            "feedback": target_follow_up.feedback,
+            "score": {
+                "clarity": target_follow_up.clarity_score,
+                "relevance": target_follow_up.relevance_score
+            },
+        }
+
+    # 새 피드백 생성
+    feedback_text = await session.generate_feedback(target_follow_up.answer)
+
+    # 간단한 예: 점수 추출 로직은 여기서 파싱(예: 임시로 4점씩 넣는다)
+    clarity_score = 4
+    relevance_score = 4
+
+    target_follow_up.feedback = feedback_text
+    target_follow_up.clarity_score = clarity_score
+    target_follow_up.relevance_score = relevance_score
+    db.add(target_follow_up)
+    db.commit()
+
+    return {
+        "feedback": feedback_text,
+        "score": {
+            "clarity": clarity_score,
+            "relevance": relevance_score
+        },
+    }
+

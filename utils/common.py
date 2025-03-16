@@ -38,7 +38,7 @@ def load_pdf_to_text(pdf_path):
 def summarize_text(text, max_length=1000):
     client = openai.OpenAI(api_key=api_key)
     response = client.chat.completions.create(  # ✅ 최신 API 방식
-        model="gpt-3.5-turbo",
+        model="gpt-4o",
         messages=[
             {"role": "system", "content": "You are a helpful and smart assistant."},
             {"role": "user", "content": f"Summarize this text in korean: {text}"}
@@ -62,7 +62,7 @@ def load_mock_interview_data(csv_path, num_examples=2):
 def extract_video_id(youtube_url):
     # 다양한 유튜브 URL 패턴 대응
     patterns = [
-        r"v=([a-zA-Z0-9_-]+)",  # 일반적인 URL (https://www.youtube.com/watch?v=영상ID)
+        r"v=([a-zA-Z0-9_-]+)",  # 일반적인 URL (//https:www.youtube.com/watch?v=영상ID)
         r"youtu\.be/([a-zA-Z0-9_-]+)",  # 단축 URL (https://youtu.be/영상ID)
         r"embed/([a-zA-Z0-9_-]+)"  # 임베드 URL (https://www.youtube.com/embed/영상ID)
     ]

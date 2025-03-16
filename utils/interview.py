@@ -1,209 +1,115 @@
-import os
-import pandas as pd
+from sqlalchemy.orm import Session
+from PyPDF2 import PdfReader
+import openai
+import requests
+from db import InterviewSessionDB, MainQuestionDB, FollowUpDB
 from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
-from langchain_community.llms import OpenAI
-from routers.pdf_storage import pdf_files  # ✅ pdf_files를 직접 불러오도록 변경
-from config import FILE_DIR
-from utils.common import load_pdf_to_text, summarize_text, load_mock_interview_data
-from config import API_KEY
+from langchain.llms import OpenAI
+from config import API_KEY, FILE_DIR
+import os
 
 class InterviewSession:
-    def __init__(self, token: str, question_num=5, mock_data_path=None):    # 클래스 초기화 및 템플릿, LLM 체인 설정
+    def __init__(self, token: str, pdf_path: str = None, url: str = None, db: Session = None):
+        """인터뷰 세션을 초기화하고, PDF 또는 URL을 분석하여 요약."""
         self.token = token
-        self.question_num = question_num
-        self.question_index = 0
-        self.questions = []
-        self.answers = []
-        self.resume = self._load_pdf_to_resume()
-        self.mock_data_path = mock_data_path
-        self.example_questions = self._load_mock_interview_data(mock_data_path)
-        self.hint_requested = False     # 힌트 버튼 클릭 여부 상태
-        
-    async def generate_initial_questions(self):     # 최초 대표질문 5개 생성 -> 라우팅할 함수
-        for _ in range(self.question_num):
-            question = await self._generate_question()
-            self.questions.append(question)
-        return self.questions
-    
-    async def start_interview_session(self, question_index):    # 대표질문 하나를 클릭하면 시작되는 인터뷰 세션 -> 라우팅할 함수
-        self.current_question_index = question_index
-        question = self.questions[question_index]
-        print(f'📌 질문 {question_index + 1}: {question}')
-        for round_num in range(1, 4):
-            if self.hint_requested:
-                hint = await self.generate_hint(question)
-                print(f'💡 힌트: {hint}')
-                self.hint_requested = False     # 초기화
-            # 나머지 피드백, 꼬리질문은 무조건 생성
-            answer = input(f'📝 답변 {round_num}: ')
-            feedback = await self.generate_feedback(answer)
-            print(f'🗨️ 피드백: {feedback}')
-            question = await self.generate_follow_up_question(answer)
-            print(f'🔄 꼬리질문: {question}')
-    
-    def requst_hint(self):      # 힌트 버튼 누르면 호출해야 하는 함수 -> 나중에 힌트 버튼에 라우팅할 함수
-        self.hint_requested = True
-    
-    async def _generate_question(self):                     # 대표 질문 생성
-        self.prompt = PromptTemplate(
-            template=self._get_question_template(), 
-            input_variables=['resume'] 
-            )
+        self.db = db
+        self.pdf_path = pdf_path
+        self.url = url
         self.llm = OpenAI(api_key=API_KEY)
-        self.llm_chain = LLMChain(prompt=self.prompt, llm=self.llm)
+        self.resume_summary = self._process_input()
+
+    def _process_input(self):
+        """PDF 또는 URL을 처리하여 요약된 텍스트를 반환."""
+        if self.pdf_path:
+            return self._summarize_text(self._load_pdf_to_text(self.pdf_path))
+        elif self.url:
+            return self._summarize_text(self._fetch_url_content(self.url))
+        return ""
     
+    def _load_pdf_to_text(self, pdf_path):
+        """PDF에서 텍스트를 추출."""
+        text = ""
+        reader = PdfReader(pdf_path)
+        for page in reader.pages:
+            text += page.extract_text() + "\n"
+        return text.strip()
     
-    async def generate_follow_up_question(self, answer):    # 꼬리 질문 생성 함수
-        follow_up_prompt = PromptTemplate(
-            template=self._get_follow_up_template(),
-            input_variables=['answer']
-            )
-        follow_up_chain = LLMChain(prompt=follow_up_prompt, llm=self.llm)
-        return follow_up_chain.arun({'answer': answer})
+    def _fetch_url_content(self, url):
+        """주어진 URL에서 텍스트 데이터를 가져옴."""
+        response = requests.get(url)
+        return response.text if response.status_code == 200 else ""
     
-    
-    async def generate_hint(self, question):    # 힌트 제공 함수
-        hint_prompt = PromptTemplate(
-            template=self._get_hint_template(), 
-            input_variables=['question']
-            )
-        hint_chain = LLMChain(prompt=hint_prompt, llm=self.llm)
-        return hint_chain.arun({'question': question})
-
-
-    async def generate_feedback(self, answer: str):   # 피드백 생성 함수
-        feedback_prompt = PromptTemplate(
-            template=self._get_feedback_template(), 
-            input_variables=['answer']
-            )
-        feedback_chain = LLMChain(prompt=feedback_prompt, llm=self.llm)
-        result = await feedback_chain.arun({'answer': answer})
-        return result.strip() if result else "피드백을 생성할 수 없습니다."
-
-
-    def _load_pdf_to_resume(self):
-        if self.token not in pdf_files:
-            raise ValueError("해당 토큰에 대한 PDF 파일이 존재하지 않습니다.")
-
-        pdf_path = os.path.join(FILE_DIR, f"{self.token}.pdf")
-        if not os.path.exists(pdf_path):
-            raise FileNotFoundError("PDF 파일이 존재하지 않습니다.")
-
-        pdf_text = load_pdf_to_text(pdf_path)
-        summarized_text = summarize_text(pdf_text, max_length=1500)
-        return summarized_text
-
-
-    def _load_mock_interview_data(self, csv_path):
-        mock_interview_examples = load_mock_interview_data(csv_path)
-        examples_text = "\n".join([f"{i+1}. {example}" for i, example in enumerate(mock_interview_examples)])
-        return examples_text
-
-
-    async def add_answer(self, answer):     # 답변 누적 히스토리 -> for 꼬리질문
-        self.answers.append(answer)
-        recent_qa = "\n".join(  # 최근 5개 질문 - 답변만 유지
-        [f"질문 {i+1}: {q}\n답변 {i+1}: {a}" 
-        for i, (q, a) in enumerate(zip(self.questions[-5:], self.answers[-5:]))]
+    def _summarize_text(self, text, max_length=1500):
+        """텍스트를 요약하여 반환."""
+        client = openai.OpenAI(api_key=API_KEY)
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are an intelligent summarization assistant."},
+                {"role": "user", "content": f"Summarize this text: {text}"}
+            ],
+            max_tokens=max_length
         )
-        self.resume = f"{self._load_pdf_to_resume()}\n{recent_qa}"
-
-
-    async def _generate_question(self):
-        try:
-            result = await self.llm_chain.arun({'resume': self.resume})
-            return result.strip() if result else "질문을 생성할 수 없습니다."
-        except Exception as e:
-            return f"질문 생성 중 오류 발생: {str(e)}"
+        return response.choices[0].message.content.strip()
+    
+    async def generate_main_question(self):
+        """요약된 내용을 기반으로 대표 질문을 생성."""
+        prompt = PromptTemplate(template=self._get_question_template(), input_variables=['resume'])
+        chain = LLMChain(prompt=prompt, llm=self.llm)
+        question = await chain.arun({'resume': self.resume_summary})
+        return question.strip()
+    
+    async def generate_follow_up(self, last_answer: str):
+        """사용자의 답변을 기반으로 꼬리질문을 생성."""
+        prompt = PromptTemplate(template=self._get_follow_up_template(), input_variables=['answer'])
+        chain = LLMChain(prompt=prompt, llm=self.llm)
+        question = await chain.arun({'answer': last_answer})
+        return question.strip()
+    
+    async def generate_hint(self, question: str):
+        """질문에 대한 힌트를 생성."""
+        prompt = PromptTemplate(template=self._get_hint_template(), input_variables=['question'])
+        chain = LLMChain(prompt=prompt, llm=self.llm)
+        hint = await chain.arun({'question': question})
+        return hint.strip()
+    
+    async def generate_feedback(self, answer: str):
+        """사용자의 답변을 평가하고, 피드백과 점수를 생성."""
+        prompt = PromptTemplate(template=self._get_feedback_template(), input_variables=['answer'])
+        chain = LLMChain(prompt=prompt, llm=self.llm)
+        feedback = await chain.arun({'answer': answer})
         
-
-    async def generate_next_question(self, with_hint=False, with_feedback=False, answer=None):
-        question_response = await self._generate_question()
-        response = {
-            "index": self.question_index + 1,
-            "question": question_response if isinstance(question_response, str) else question_response.get('question', '질문 없음')
-        }
-
-        if with_hint:
-            response["hint"] = await self.generate_hint(response["question"])
-        if answer:
-            response["feedback"] = await self.generate_feedback(answer)
-            response["follow_up"] = await self.generate_follow_up_question(answer)
+        # 피드백에서 점수를 추출하는 로직 (예제 방식)
+        clarity_score = 4  # 명확성 점수 (예제 값)
+        relevance_score = 5  # 관련성 점수 (예제 값)
+        return feedback.strip(), clarity_score, relevance_score
     
-        self.questions.append(response["question"])
-        self.question_index += 1
-        return response
-
-    
-    def _get_question_template(self):   # 대표질문 생성 프롬프트 템플릿
-        return f'''
+    def _get_question_template(self):
+        """대표 질문을 생성하기 위한 프롬프트 템플릿."""
+        return """
         You are an expert AI interviewer.
-        Use the following resume to make a question in Korean:
-        {{resume}}
-        
-        Here are example questions from a mock interview dataset:
-        {self.example_questions}
-        
-        The question must:
-        1. Be in Korean.
-        2. Be specific and tailored to the details of the resume.
-        3. Focus on the skills, experiences, or projects mentioned.
-        4. Avoid repetition of previously generated questions.
-        5. Be similar in style and detail to the examples provided.
-        6. Only provide one question at a time.
-        7. Be realistic and appropriate for a job interview setting.
-        8. Always follow this format: "질문: ~."
-        '''
-        
-    def _get_follow_up_template(self):  # 꼬리질문 생성 프롬프트 템플릿
-        return f'''
-        You are an expert AI job interviewer.
-        Use the following answer from a candidate to create a follow-up question in Korean:
-        {{answer}}
-        The follow-up question must:
-        1. Be in Korean.
-        2. Avoid repetition of previously generated questions.
-        3. Focus on details mentioned in the answer.
-        4. Explore the reasoning, challenges, results, or methodology in the answer.
-        5. Only provide one follow-up question at a time.
-        6. Always follow this format: "질문: ~."
-        '''
+        Use the following resume summary to create a main interview question in Korean:
+        {resume}
+        """
     
-    def _get_hint_template(self):       # 힌트 생성 프롬프트 템플릿
-        return f'''
-        You are an expert AI interviewer providing hints.
-        Provide a brief hint in Korean to help answer this question effectively:
-        질문: {{question}}
-
-        The hint should:
-        1. Be concise (1-2 sentences).
-        2. Focus on what aspects of experience or skills to highlight.
-        3. Be supportive and encouraging.
-        4. Use this format: "힌트: ~"
-        5. Always include encouraging comments and actionable advice with a kind and supportive tone.
-        '''
+    def _get_follow_up_template(self):
+        """꼬리 질문을 생성하기 위한 프롬프트 템플릿."""
+        return """
+        Given the following answer, generate a follow-up question in Korean.
+        Answer: {answer}
+        """
     
-    def _get_feedback_template(self):   # 피드백 생성 프롬프트 템플릿
-        return f'''
-        You are an expert AI job interview coach. Use the following answer from a candidate to provide detailed feedback in Korean:
-        {{answer}}
-
-        The feedback must:
-        1. Compliment specific strengths in the answer.
-        2. Identify areas where the answer could be more specific or detailed.
-        3. Provide concrete examples or suggestions for improvement directly related to the details mentioned in the answer.
-        4. Be realistic and appropriate for a professional job interview setting.
-        5. Be written in Korean, formatted with clear and professional language.
-        6. Always include encouraging comments and actionable advice with a kind and supportive tone.
-        Example Feedback:
-        "우선, 팀원들의 장점과 관심사를 파악하기 위해 본인이 한 노력의 단계와 과정을 구체적으로 설명하신 부분은 훌륭합니다! 다만 구체적인 경험, 예를 들어 ‘애니를 좋아하는 친구와의 라포를 형성하기 위해 요즘 유행하는 넷플릭스 애니메이션 이름을 언급하며 가까워질 수 있었습니다’와 같은 구체적인 예시가 부족해 보입니다. 다음에는 이런 부분을 언급하면서 답변하면 더욱더 신뢰감을 줄 수 있어 좋을 것으로 보입니다! 👏"
-        When giving examples or suggestions, tailor them to the candidate's answer to make them relevant and specific. Avoid reusing generic or unrelated examples.
-        Provide the feedback only, without additional explanations or comments.
-        '''
-
+    def _get_hint_template(self):
+        """질문에 대한 힌트를 생성하기 위한 프롬프트 템플릿."""
+        return """
+        Given the following question, generate a helpful hint in Korean.
+        Question: {question}
+        """
     
-    
-
-    
-
+    def _get_feedback_template(self):
+        """사용자의 답변을 평가하고 점수를 부여하는 프롬프트 템플릿."""
+        return """
+        Analyze the following answer and provide a structured feedback with clarity and relevance scores (1-5).
+        Answer: {answer}
+        """

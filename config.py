@@ -9,6 +9,9 @@ PORT = 8080
 CPORT = 3000
 ORIGIN_REGEX = f"^(https?://)?({RHOST}|localhost)(:({PORT}|{CPORT}|80|443))?(/.*)?$"
 
+# API URL 추가
+API_URL = f"http://{HOST}:{PORT}"  # 또는 "http://localhost:8080"
+
 CURR_DIR = os.getcwd()
 FILE_DIR = os.path.join(CURR_DIR, "files")
 MAX_FSIZE = 50 * 1024 * 1024 # 50MB

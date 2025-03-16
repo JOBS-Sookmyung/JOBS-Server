@@ -1,11 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import input, questions, answers
+from routers import input
 # from routers import recommendations
 from config import HOST, PORT, ORIGIN_REGEX
 from utils import clean_files
 from routers.login import router as login_router
 from db import create_tables
+from routers.chat import chat
 import uvicorn
 import atexit
 import asyncio
@@ -27,8 +28,8 @@ app.add_middleware(
 
 # 라우트 설정
 app.include_router(input)
-app.include_router(questions)
-app.include_router(answers)
+
+app.include_router(chat)
 # app.include_router(recommendations)
 app.include_router(login_router, prefix="", tags=["auth"])
 

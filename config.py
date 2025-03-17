@@ -19,7 +19,7 @@ MAX_FSIZE = 50 * 1024 * 1024 # 50MB
 # .env 파일 로드
 load_dotenv()
 
-SQL_URL = os.getenv("SQL_URL")
+SQL_URL = os.getenv("SQL_URL", "mysql+pymysql://user:password@localhost:3307/jobs")
 NOSQL_URL = os.getenv("NOSQL_URL")
 
 API_KEY = os.getenv("API_KEY")

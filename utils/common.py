@@ -38,7 +38,7 @@ def load_pdf_to_text(pdf_path):
 def summarize_text(text, max_length=1000):
     client = openai.OpenAI(api_key=api_key)
     response = client.chat.completions.create(  # ✅ 최신 API 방식
-        model="gpt-4o",
+        model="gpt-3.5-turbo",
         messages=[
             {"role": "system", "content": "You are a helpful and smart assistant."},
             {"role": "user", "content": f"Summarize this text in korean: {text}"}

@@ -3,7 +3,7 @@ import uuid
 from fastapi import APIRouter, Response, Cookie, File, Form, UploadFile, HTTPException
 from config import FILE_DIR, MAX_FSIZE
 from utils import echo, load_pdf_to_text
-from routers.pdf_storage import pdf_files, add_pdf
+from routers.pdf_storage import pdf_storage
 
 # Ensure the FILE_DIR exists
 if not os.path.exists(FILE_DIR):
@@ -13,9 +13,12 @@ input = APIRouter(prefix="/input", tags=["input"])
 
 @input.get("/")
 async def reload_form(token: str = Cookie(None)):
-    if not token or token not in pdf_files:
+    if not token:
         return None
-    return pdf_files[token]
+    pdf_data = pdf_storage.get_pdf(token)
+    if not pdf_data:
+        return None
+    return pdf_data
 
 @input.post("/uploadfile/")
 async def upload_file(
@@ -61,7 +64,7 @@ async def upload_file(
         "resume_text": resume_text,
         "recruitUrl": recruitUrl,
     }
-    add_pdf(token, pdf_data)
+    pdf_storage.add_pdf(token, pdf_data)
 
     print(f"✅ 파일 업로드 완료 - 토큰: {token}")
     
@@ -70,3 +73,14 @@ async def upload_file(
         "token": token,
         "redirect_url": f"/chat?token={token}"
     }
+
+@input.get("/pdf/{token}")
+async def get_pdf(token: str):
+    if not token:
+        raise HTTPException(status_code=400, detail="토큰이 필요합니다.")
+    
+    pdf_data = pdf_storage.get_pdf(token)
+    if not pdf_data:
+        raise HTTPException(status_code=404, detail="PDF를 찾을 수 없습니다.")
+    
+    return pdf_data

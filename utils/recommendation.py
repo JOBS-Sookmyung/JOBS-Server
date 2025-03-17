@@ -3,7 +3,8 @@ import pandas as pd
 from sentence_transformers import SentenceTransformer
 import faiss 
 # from pymongo import MongoClient
-from routers.pdf_storage import get_pdf  # pdf_files 대신 get_pdf 함수 사용
+from routers.pdf_storage import pdf_storage
+from langchain_community.llms import OpenAI  # 새로운 방식
 
 
 def load_faiss_index(faiss_path):
@@ -22,7 +23,7 @@ class RecommendVideo:
         self.top_n = top_n
         
         # pdf_storage에서 이력서 텍스트 가져오기
-        pdf_data = get_pdf(token)
+        pdf_data = pdf_storage.get_pdf(token)
         self.resume_text = pdf_data.get("resume_text", "")
         
         if not self.resume_text:
@@ -63,3 +64,9 @@ class RecommendVideo:
         except Exception as e:
             print(f"❌ 추천 처리 중 오류 발생: {str(e)}")
             return []
+
+def get_recommendations(token: str):
+    pdf_data = pdf_storage.get_pdf(token)
+    if not pdf_data:
+        return None
+    # 나머지 로직...

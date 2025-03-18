@@ -7,7 +7,7 @@ from langchain.chains import LLMChain
 from langchain_community.llms import OpenAI
 from routers.pdf_storage import pdf_storage
 from config import FILE_DIR, API_KEY
-from db import SessionLocal, MainQuestionDB, FollowUpDB  # DB 모델 임포트
+from db import SessionLocal, MainQuestionDB, FollowUpDB, InterviewSessionDB  # DB 모델 임포트
 
 class InterviewSession:
     def __init__(self, token: str, question_num=5, answer_per_question=5, mock_data_path=None):
@@ -71,59 +71,115 @@ class InterviewSession:
         """여러 개의 대표 질문을 생성하는 메서드"""
         try:
             questions = []
-            for _ in range(num_questions):
+            for i in range(num_questions):
+                print(f"📝 {i+1}번째 질문 생성 시도 중...")
                 question = await self.generate_main_question()
                 if question:
                     questions.append(question)
+                    print(f"✅ {i+1}번째 질문 생성 성공")
+                else:
+                    print(f"❌ {i+1}번째 질문 생성 실패")
+                    break
+            
+            if not questions:
+                print("❌ 생성된 질문이 없습니다.")
+                return ["대표질문을 생성할 수 없습니다. 잠시 후 다시 시도해주세요."] * num_questions
+            
             return questions
         except Exception as e:
-            print(f"질문 생성 중 오류 발생: {str(e)}")
-            return []
+            print(f"❌ 질문 생성 중 오류 발생: {str(e)}")
+            return ["대표질문을 생성할 수 없습니다. 잠시 후 다시 시도해주세요."] * num_questions
 
     async def generate_main_question(self):
         try:
             if len(self.main_questions) >= self.question_num:
+                print("❌ 최대 질문 수에 도달했습니다.")
                 return None
             
+            print("📝 프롬프트 생성 중...")
             prompt = PromptTemplate(
                 template=self._get_question_template(),
                 input_variables=['resume', 'job_url']
             )
             chain = LLMChain(prompt=prompt, llm=self.llm)
 
-            # 비동기 호출을 동기 호출로 변경
-            question = chain.run({
-                'resume': self.resume,
-                'job_url': self.recruit_url
-            })
-            
-            # 질문 형식 검증 및 정제
-            if not question or "질문:" not in question:
-                print(f"잘못된 질문 형식: {question}")
-                return "대표질문을 생성할 수 없습니다."
+            # 최대 3번까지 시도
+            max_attempts = 3
+            for attempt in range(max_attempts):
+                print(f"🤖 OpenAI API 호출 중... (시도 {attempt + 1}/{max_attempts})")
+                question = chain.run({
+                    'resume': self.resume,
+                    'job_url': self.recruit_url
+                })
+                print(f"📄 API 응답: {question}")
                 
-            question = question.strip()
-            if not question:
-                return "대표질문을 생성할 수 없습니다."
+                # 질문 형식 검증 및 정제
+                if not question:
+                    print("❌ 질문이 생성되지 않았습니다.")
+                    continue
+                
+                # "질문:" 부분 제거하고 실제 질문만 추출
+                question = question.strip()
+                if "질문:" in question:
+                    question = question.split("질문:")[1].strip()
+                    print(f"✅ 질문 추출 완료: {question}")
+                else:
+                    print("⚠️ '질문:' 형식이 없습니다.")
+                    continue
+                
+                if not question:
+                    print("❌ 질문이 비어있습니다.")
+                    continue
 
-            # DB에 저장
-            db = SessionLocal()
-            try:
-                new_question = MainQuestionDB(session_id=self.token, content=question)
-                db.add(new_question)
-                db.commit()
-                db.refresh(new_question)
-                self.main_questions.append(question)
-            except Exception as db_error:
-                print(f"DB 저장 중 오류 발생: {str(db_error)}")
-                db.rollback()
-            finally:
-                db.close()
+                # 중복 체크
+                is_duplicate = False
+                for existing_question in self.main_questions:
+                    # 유사도 체크 (단순 문자열 포함 여부)
+                    if question in existing_question or existing_question in question:
+                        print(f"⚠️ 중복된 질문 감지: {question}")
+                        is_duplicate = True
+                        break
+                
+                if is_duplicate:
+                    continue
 
-            return question
+                # DB에 저장
+                print("💾 DB 저장 시도 중...")
+                db = SessionLocal()
+                try:
+                    # 세션 ID를 가져오기 위해 InterviewSessionDB 조회
+                    session = db.query(InterviewSessionDB).filter_by(session_token=self.token).first()
+                    if not session:
+                        print(f"❌ 세션을 찾을 수 없습니다: {self.token}")
+                        continue
+                    
+                    new_question = MainQuestionDB(
+                        session_id=session.id,  # 세션 ID 사용
+                        content=question
+                    )
+                    db.add(new_question)
+                    db.commit()
+                    db.refresh(new_question)
+                    
+                    # 메모리에 질문 추가
+                    self.main_questions.append(question)
+                    print(f"✅ 질문 생성 성공: {question}")
+                    
+                    return question
+                    
+                except Exception as db_error:
+                    print(f"❌ DB 저장 중 오류 발생: {str(db_error)}")
+                    db.rollback()
+                    continue
+                finally:
+                    db.close()
+            
+            print("❌ 유효한 질문을 생성하지 못했습니다.")
+            return None
+            
         except Exception as e:
-            print(f"질문 생성 중 오류 발생: {str(e)}")
-            return "대표질문을 생성할 수 없습니다."
+            print(f"❌ 질문 생성 중 오류 발생: {str(e)}")
+            return None
 
     async def generate_follow_up(self, last_answer: str):
         try:
@@ -196,27 +252,23 @@ class InterviewSession:
 
     def _get_question_template(self):
         return f'''
-        You are an expert AI interviewer.
-        Use the following resume and job description to make a question in Korean:
+        다음 이력서와 채용 공고를 바탕으로 면접 질문을 생성해주세요.
 
-        [Resume]
-        {self.resume}
+        [이력서]
+        {self.resume[:1000]}  # 이력서 텍스트를 1000자로 제한
 
-        [Job Description]
-        {self.recruit_url}
+        [채용 공고]
+        {self.recruit_url[:500]}  # 채용 공고 URL을 500자로 제한
 
-        Here are example questions from a mock interview dataset:
+        [예시 질문]
         {self.example_questions}
 
-        The question must:
-        1. Be in Korean.
-        2. Be specific and tailored to the details of the resume & job description.
-        3. Focus on the skills, experiences, or projects mentioned.
-        4. Avoid repetition of previously generated questions.
-        5. Be similar in style and detail to the examples provided.
-        6. Only provide one question at a time.
-        7. Be realistic and appropriate for a job interview setting.
-        8. ADo not include any additional text or explanations.
+        요구사항:
+        1. 한국어로 작성
+        2. 이력서와 채용 공고에 맞는 구체적인 질문
+        3. 예시 질문과 비슷한 스타일로 작성
+        4. "질문: ~" 형식으로 작성
+        5. 추가 설명 없이 질문만 작성
         '''
 
     def _get_follow_up_template(self):

@@ -5,12 +5,12 @@ from dotenv import load_dotenv
 # 환경변수 정의
 HOST = "0.0.0.0"
 RHOST = HOST.replace(".", "\\.")
-PORT = 8080
+PORT = 8000
 CPORT = 3000
 ORIGIN_REGEX = f"^(https?://)?({RHOST}|localhost)(:({PORT}|{CPORT}|80|443))?(/.*)?$"
 
 # API URL 추가
-API_URL = f"http://{HOST}:{PORT}"  # 또는 "http://localhost:8080"
+API_URL = f"http://{HOST}:{PORT}"  # 또는 "http://localhost:8000"
 
 CURR_DIR = os.getcwd()
 FILE_DIR = os.path.join(CURR_DIR, "files")

@@ -14,16 +14,23 @@ import asyncio
 
 app = FastAPI(title="JOBS-Server", version="0.2.0")
 
-origins = ["http://localhost:8000", "http://localhost:3000"]
+# CORS 설정
+origins = [
+    "http://localhost:3000",
+    "http://localhost:8000",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:8000"
+]
 
-# CORS 설정 허용
+# CORS 미들웨어를 가장 먼저 추가
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=ORIGIN_REGEX,
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    allow_origins=origins,
+    expose_headers=["*"],
+    max_age=3600,
 )
 
 # 라우트 설정

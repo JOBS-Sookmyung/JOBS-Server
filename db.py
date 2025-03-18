@@ -17,8 +17,8 @@ pymysql.install_as_MySQLdb()
 engine = create_engine(
     SQL_URL,
     pool_pre_ping=True,
-    pool_size=20,
-    max_overflow=30,
+    pool_size=10,  # 기본값으로 줄임
+    max_overflow=20,
     echo=True
 )
 
@@ -57,32 +57,26 @@ class InterviewSessionDB(Base):
 class MainQuestionDB(Base):
     __tablename__ = "main_questions"
     id = Column(Integer, primary_key=True)
-    session_id = Column(Integer, ForeignKey("sessions.id"))
+    session_id = Column(String(36), ForeignKey("sessions.id"))
     content = Column(Text, nullable=False)
     session = relationship("InterviewSessionDB", back_populates="main_questions")
     follow_ups = relationship("FollowUpDB", back_populates="main_question", cascade="all, delete-orphan")
 
-# 꼬리 질문 테이블
+# 꼬리 질문 테이블 (피드백, 힌트 필드 제거)
 class FollowUpDB(Base):
     __tablename__ = "follow_ups"
     id = Column(Integer, primary_key=True)
     main_question_id = Column(Integer, ForeignKey("main_questions.id"))
     content = Column(Text, nullable=False)
     answer = Column(Text, nullable=True)
-    hint = Column(Text, nullable=True)
-    feedback = Column(Text, nullable=True)
-    clarity_score = Column(Integer, nullable=True)
-    relevance_score = Column(Integer, nullable=True)
-    next_question_id = Column(Integer, ForeignKey("follow_ups.id"), nullable=True)  # 다음 꼬리 질문 연결
     main_question = relationship("MainQuestionDB", back_populates="follow_ups")
 
-# 채팅 로그 테이블
+# 채팅 로그 테이블 (timestamp 필드 제거)
 class ChatLogDB(Base):
     __tablename__ = "chat_logs"
     id = Column(Integer, primary_key=True)
     session_id = Column(Integer, ForeignKey("sessions.id"))
     question_id = Column(Integer, ForeignKey("follow_ups.id"), nullable=True)
-    timestamp = Column(DateTime, default=datetime.utcnow)
     user_message = Column(Text, nullable=False)
     system_response = Column(Text, nullable=True)
     session = relationship("InterviewSessionDB")

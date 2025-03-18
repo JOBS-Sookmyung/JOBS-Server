@@ -279,10 +279,12 @@ class InterviewSession:
 
         The follow-up question must:
         1. Be in Korean.
-        2. Avoid repetition of previously generated questions.
-        3. Focus on details mentioned in the answer.
+        2. You must avoid repetition of previously generated questions.
+        3. Be specific and you must focus on details mentioned in the answer.
         4. Explore the reasoning, challenges, results, or methodology in the answer.
-        5. Only provide one follow-up question at a time.
+        5. Be realistic and appropriate for a job interview setting.
+        6. Only provide one follow-up question at a time.
+        7. Provide only the follow-up question, without any additional explanations or comments.
         '''
 
     def _get_hint_template(self):       # 힌트 생성 프롬프트 템플릿

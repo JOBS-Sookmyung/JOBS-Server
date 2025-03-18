@@ -7,35 +7,42 @@ from langchain.chains import LLMChain
 from langchain_community.llms import OpenAI
 from routers.pdf_storage import pdf_storage
 from config import FILE_DIR, API_KEY
-from db import SessionLocal, MainQuestionDB, FollowUpDB, InterviewSessionDB  # DB 모델 임포트
+from db import SessionLocal, MainQuestionDB, FollowUpDB, InterviewSessionDB
+from typing import Optional, Dict, Any
 
 class InterviewSession:
     def __init__(self, token: str, question_num=5, answer_per_question=5, mock_data_path=None):
         self.token = token
+        
+        # PDF 데이터 로드
+        pdf_data = pdf_storage.get_pdf(token)
+        if not pdf_data:
+            print(f"⚠️ PDF 데이터를 찾을 수 없음: {token}")
+            # 기본값으로 초기화
+            self.resume = "이력서 데이터가 없습니다."
+            self.recruit_url = "채용 공고 URL이 없습니다."
+        else:
+            self.resume = pdf_data.get("resume_text", "이력서 텍스트를 가져올 수 없습니다.")
+            self.recruit_url = pdf_data.get("recruitUrl", "채용 공고 URL이 없습니다.")
+        
+        # 세션 초기화
         self.current_main = 0
         self.current_follow_up = 0
         self.current_answer = 0
-
         self.question_num = question_num
         self.answer_per_question = answer_per_question
         self.main_questions = []
         self.follow_up_questions = [[] for _ in range(question_num)]
         self.answers = [[] for _ in range(question_num)]
-        self.hints = [[] for _ in range(question_num)]  # 세션 내 유지 (DB 저장 X)
-        self.feedbacks = [[] for _ in range(question_num)]  # 세션 내 유지 (DB 저장 X)
-
-        self.llm = OpenAI(api_key=API_KEY)
-
-        # ✅ PDF 텍스트 & 채용 URL 직접 가져오기 (파일 변환 X)
-        pdf_data = pdf_storage.get_pdf(token)
-        if not pdf_data:
-            raise ValueError(f"🚨 해당 토큰({token})에 대한 PDF 파일이 존재하지 않습니다.")
-
-        self.resume = pdf_data.get("resume_text", "🚨 이력서 텍스트를 가져올 수 없습니다.")
-        self.recruit_url = pdf_data.get("recruitUrl", "🚨 채용 공고 URL이 없습니다.")
-
+        self.hints = [[] for _ in range(question_num)]
+        self.feedbacks = [[] for _ in range(question_num)]
+        
         self.mock_data_path = mock_data_path
         self.example_questions = self._load_mock_interview_data(mock_data_path)
+        
+        print(f"새로운 세션 생성 완료: {token}")
+        
+        self.llm = OpenAI(api_key=API_KEY)
 
     def get_current_state(self):
         return {
@@ -67,16 +74,20 @@ class InterviewSession:
             print(f"모의 면접 데이터 로딩 실패: {str(e)}")
             return ""
 
+    #대표질문 생성
     async def generate_main_questions(self, num_questions: int = 5):
         """여러 개의 대표 질문을 생성하는 메서드"""
         try:
             questions = []
+            print(f"대표 질문 생성 시작 - 목표 개수: {num_questions}")
+            
             for i in range(num_questions):
                 print(f"📝 {i+1}번째 질문 생성 시도 중...")
                 question = await self.generate_main_question()
+                
                 if question:
                     questions.append(question)
-                    print(f"✅ {i+1}번째 질문 생성 성공")
+                    print(f"✅ {i+1}번째 질문 생성 성공: {question}")
                 else:
                     print(f"❌ {i+1}번째 질문 생성 실패")
                     break
@@ -85,7 +96,10 @@ class InterviewSession:
                 print("❌ 생성된 질문이 없습니다.")
                 return ["대표질문을 생성할 수 없습니다. 잠시 후 다시 시도해주세요."] * num_questions
             
+            print(f"✅ 총 {len(questions)}개의 질문 생성 완료")
+            print(f"생성된 질문 목록: {questions}")
             return questions
+            
         except Exception as e:
             print(f"❌ 질문 생성 중 오류 발생: {str(e)}")
             return ["대표질문을 생성할 수 없습니다. 잠시 후 다시 시도해주세요."] * num_questions
@@ -181,70 +195,114 @@ class InterviewSession:
             print(f"❌ 질문 생성 중 오류 발생: {str(e)}")
             return None
 
+    # 꼬리질문 생성
     async def generate_follow_up(self, last_answer: str):
         try:
             if len(self.follow_up_questions[self.current_main]) >= self.answer_per_question - 1:
-                return None
+                return "더 이상의 꼬리질문이 없습니다."
             
             prompt = PromptTemplate(template=self._get_follow_up_template(), input_variables=['answer'])
             chain = LLMChain(prompt=prompt, llm=self.llm)
-
-            # 비동기 호출을 동기 호출로 변경
             question = chain.run({'answer': last_answer})
             question = question.strip() if question else "꼬리질문을 생성할 수 없습니다."
 
-            # **DB에 저장**
+            # DB에 저장
             db = SessionLocal()
             try:
-                new_follow_up = FollowUpDB(main_question_id=self.current_main, content=question)
+                # 현재 세션의 메인 질문을 가져옴
+                session = db.query(InterviewSessionDB).filter_by(session_token=self.token).first()
+                if not session:
+                    print(f"❌ 세션을 찾을 수 없습니다: {self.token}")
+                    return question
+                
+                # 현재 메인 질문 인덱스에 해당하는 질문을 가져옴
+                main_questions = db.query(MainQuestionDB).filter_by(session_id=session.id).all()
+                if not main_questions or self.current_main >= len(main_questions):
+                    print(f"❌ 메인 질문을 찾을 수 없습니다: 인덱스 {self.current_main}")
+                    return question
+                
+                main_question = main_questions[self.current_main]
+                
+                new_follow_up = FollowUpDB(
+                    session_id=main_question.session_id,
+                    main_question_id=main_question.id,
+                    content=question
+                )
                 db.add(new_follow_up)
                 db.commit()
                 db.refresh(new_follow_up)
+                
+                # 메모리에도 저장
                 self.follow_up_questions[self.current_main].append(question)
+                return question
+                
+            except Exception as e:
+                print(f"❌ DB 저장 중 오류 발생: {str(e)}")
+                db.rollback()
+                return question
             finally:
                 db.close()
 
-            return question
         except Exception as e:
             print(f"꼬리질문 생성 중 오류 발생: {str(e)}")
             return "꼬리질문을 생성할 수 없습니다."
 
-    def store_user_answer(self, question_id: int, answer: str):
-        """사용자의 답변을 DB에 저장"""
-        db = SessionLocal()
+    def store_user_answer(self, session_id: int, answer: str):
+        """사용자의 답변을 저장합니다."""
         try:
-            follow_up = db.query(FollowUpDB).filter(FollowUpDB.id == question_id).first()
-            if follow_up:
-                follow_up.answer = answer
-                db.commit()
-                db.refresh(follow_up)
+            # 현재 질문 인덱스에 답변 저장
+            if 0 <= self.current_main < len(self.answers):
                 self.answers[self.current_main].append(answer)
-        finally:
-            db.close()
-
-    async def generate_hint(self, last_question):
-        try:
-            prompt = PromptTemplate(template=self._get_hint_template(), input_variables=['question'])
-            chain = LLMChain(prompt=prompt, llm=self.llm)
-            # 비동기 호출을 동기 호출로 변경
-            hint = chain.run({'question': last_question})
-            hint = hint.strip() if hint else "힌트를 생성할 수 없습니다."
-            
-            self.hints[self.current_main].append(hint)  # DB 저장 X
-            return hint
+                print(f"✅ 답변 저장 완료 - 질문 {self.current_main + 1}")
+            else:
+                print(f"⚠️ 답변 저장 실패 - 유효하지 않은 질문 인덱스: {self.current_main}")
         except Exception as e:
-            print(f"힌트 생성 중 오류 발생: {str(e)}")
-            return "힌트를 생성할 수 없습니다."
+            print(f"❌ 답변 저장 중 오류 발생: {str(e)}")
+            raise
+
+    async def generate_hint(self, question, question_index):
+        try:
+            print(f"힌트 생성 시작 - 질문 인덱스: {question_index}, 질문: {question}")
+            
+            # 이력서 텍스트 길이 제한
+            resume_text = self.resume[:1000] if len(self.resume) > 1000 else self.resume
+            
+            prompt = PromptTemplate(
+                template=self._get_hint_template(),
+                input_variables=['resume', 'question', 'question_index']
+            )
+            chain = LLMChain(prompt=prompt, llm=self.llm)
+            
+            hint = chain.run({
+                'resume': resume_text,
+                'question': question,
+                'question_index': question_index
+            })
+            
+            if not hint:
+                raise ValueError(f"질문 {question_index}에 대한 힌트가 생성되지 않았습니다.")
+            
+            hint = hint.strip()
+            print(f"생성된 힌트 (질문 {question_index}): {hint}")
+            
+            # 힌트를 세션의 힌트 리스트에 저장
+            if 0 <= question_index < len(self.hints):
+                self.hints[question_index].append(hint)
+            
+            return hint
+            
+        except Exception as e:
+            print(f"힌트 생성 중 오류 발생 (질문 {question_index}): {str(e)}")
+            return f"질문 {question_index}에 대한 힌트를 생성할 수 없습니다."
 
     async def generate_feedback(self, last_answer: str):
         try:
             prompt = PromptTemplate(template=self._get_feedback_template(), input_variables=['answer'])
             chain = LLMChain(prompt=prompt, llm=self.llm)
-            # 비동기 호출을 동기 호출로 변경
             feedback = chain.run({'answer': last_answer})
             feedback = feedback.strip() if feedback else "피드백을 생성할 수 없습니다."
 
-            self.feedbacks[self.current_main].append(feedback)  # DB 저장 X
+            self.feedbacks[self.current_main].append(feedback)
             return feedback
         except Exception as e:
             print(f"피드백 생성 중 오류 발생: {str(e)}")
@@ -287,19 +345,25 @@ class InterviewSession:
         7. Provide only the follow-up question, without any additional explanations or comments.
         '''
 
-    def _get_hint_template(self):       # 힌트 생성 프롬프트 템플릿
-        return f'''
-        [Resume Context]
-        {self.resume}
+    def _get_hint_template(self):
+        return '''
+        다음 이력서와 면접 질문을 바탕으로 답변 힌트를 생성해주세요.
 
-        [Current Question]
-        {{question}}
+        [이력서]
+        {resume}
 
-        [Guidelines]
-        1. 답변 시 강조해야 할 기술 키워드 3개 추출
-        2. STAR(Situation-Task-Action-Result) 방식 적용 제안
-        3. 구체적인 숫자/수치 사용 권장
-        4. 2문장 이내로 요약된 조언
+        [면접 질문 {question_index}]
+        {question}
+
+        다음 형식으로 힌트를 작성해주세요:
+        1. 핵심 키워드: (답변에 꼭 포함되어야 할 3-4개의 키워드)
+        2. STAR 기법 적용 방향:
+           - Situation: (상황 설명 방향)
+           - Task: (과제/목표 설명 방향)
+           - Action: (행동 설명 방향)
+           - Result: (결과 설명 방향)
+        3. 구체적인 수치/데이터 제안: (가능한 경우)
+        4. 차별화 포인트: (다른 지원자와 차별화할 수 있는 답변 방향)
         '''
 
     def _get_feedback_template(self):   # 피드백 생성 프롬프트 템플릿

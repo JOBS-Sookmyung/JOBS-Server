@@ -4,6 +4,7 @@ from fastapi import APIRouter, Response, Cookie, File, Form, UploadFile, HTTPExc
 from config import FILE_DIR, MAX_FSIZE
 from utils import echo, load_pdf_to_text
 from routers.pdf_storage import pdf_storage
+from datetime import datetime
 
 # Ensure the FILE_DIR exists
 if not os.path.exists(FILE_DIR):
@@ -23,14 +24,12 @@ async def reload_form(token: str = Cookie(None)):
 @input.post("/uploadfile/")
 async def upload_file(
     res: Response,
-    token: str = Cookie(None),
     file: UploadFile = File(...),
     recruitUrl: str = Form(...),
 ):
-    # Generate unique token if not provided
-    if not token:
-        token = str(uuid.uuid4())  # Generate a new token
-        res.set_cookie("token", token)
+    # 항상 새로운 토큰 생성
+    token = str(uuid.uuid4())
+    res.set_cookie("token", token)
 
     content = await file.read()
     file_size = len(content)
@@ -63,6 +62,7 @@ async def upload_file(
     pdf_data = {
         "resume_text": resume_text,
         "recruitUrl": recruitUrl,
+        "created_at": datetime.now().isoformat(),  # 생성 시간 추가
     }
     pdf_storage.add_pdf(token, pdf_data)
 

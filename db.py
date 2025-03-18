@@ -57,7 +57,7 @@ class InterviewSessionDB(Base):
 class MainQuestionDB(Base):
     __tablename__ = "main_questions"
     id = Column(Integer, primary_key=True)
-    session_id = Column(String(36), ForeignKey("sessions.id"))
+    session_id = Column(Integer, ForeignKey("sessions.id"))
     content = Column(Text, nullable=False)
     session = relationship("InterviewSessionDB", back_populates="main_questions")
     follow_ups = relationship("FollowUpDB", back_populates="main_question", cascade="all, delete-orphan")

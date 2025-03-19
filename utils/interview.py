@@ -311,18 +311,20 @@ class InterviewSession:
 
     def _get_feedback_template(self):   # 피드백 생성 프롬프트 템플릿
         return f'''
-        [Evaluation Rubric]
-        - 명확성: 1~5점
-        - 관련성: 1~5점 
-        - 구체성: 1~5점
-        - 전문성: 1~5점
-
-        [Answer Analysis]
-        {{answer}}
-
-        [Feedback Requirements]
-        1. 각 평가 항목별 점수 및 근거
-        2. 개선을 위한 액션 아이템 3개
-        3. 모범 답안 예시 포함
-        4. GPT-4 Turbo의 1750 토큰 제한 내에서 완결성 있는 응답
+        The feedback must:
+        1. Compliment specific strengths in the answer.
+        2. Identify areas where the answer could be more specific or detailed.
+        3. Provide concrete examples or suggestions for improvement directly related to the details mentioned in the answer.
+        4. Be realistic and appropriate for a professional job interview setting.
+        5. Be written in Korean, formatted with clear and professional language.
+        6. Always include encouraging comments and actionable advice with a kind and supportive tone.
+        7. A complete response within the 1,750-token limit of GPT-4 Turbo.
+        
+        Example Feedback:
+        "우선, 팀원들의 장점과 관심사를 파악하기 위해 본인이 한 노력의 단계와 과정을 구체적으로 설명하신 부분은 훌륭합니다! 다만 구체적인 경험, 예를 들어 '애니를 좋아하는 친구와의 라포를 형성하기 위해 요즘 유행하는 넷플릭스 애니메이션 이름을 언급하며 가까워질 수 있었습니다'와 같은 구체적인 예시가 부족해 보입니다. 다음에는 이런 부분을 언급하면서 답변하면 더욱더 신뢰감을 줄 수 있어 좋을 것으로 보입니다! 👏"
+        
+        When giving examples or suggestions, tailor them to the candidate's answer to make them relevant and specific. Avoid reusing generic or unrelated examples.
+        Provide the feedback only, without additional explanations or comments in Korean.
         '''
+
+     

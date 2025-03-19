@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Query
 from sqlalchemy.orm import Session
 from db import SessionLocal, InterviewSessionDB, ChatMessageDB
 from utils.interview import InterviewSession
@@ -25,6 +25,9 @@ class AnswerRequest(BaseModel):
 
 class FollowUpRequest(BaseModel):
     previous_answer: str
+
+class StartChatRequest(BaseModel):
+    pdf_token: str
 
 async def create_new_session(db: Session, session_token: str):
     """ 새로운 세션을 생성하고 첫 번째 질문을 저장하는 함수 """
@@ -162,14 +165,32 @@ async def get_sessions(user_id: str, db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@chat.post("/start")
-async def start_chat(db: Session = Depends(get_db)):
-    """ 새로운 채팅 세션을 시작하는 API """
+@chat.post("/start/{pdf_token}")
+async def start_chat(pdf_token: str, db: Session = Depends(get_db)):
+    """새로운 채팅 세션을 시작하는 API"""
     try:
-        session_token = str(uuid.uuid4())
-        session = await create_new_session(db, session_token)
-        return {"session_token": session_token}
+        # PDF 토큰 존재 여부 확인
+        pdf_data = pdf_storage.get_pdf(pdf_token)
+        if not pdf_data:
+            raise HTTPException(
+                status_code=400,
+                detail="PDF 데이터를 찾을 수 없습니다."
+            )
+
+        # 기존 세션이 있는지 확인
+        existing_session = db.query(InterviewSessionDB).filter_by(
+            session_token=pdf_token
+        ).first()
+        
+        if existing_session:
+            return {"session_token": pdf_token}
+
+        # 새 세션 생성 및 첫 질문 생성
+        session = await create_new_session(db, pdf_token)
+        
+        return {"session_token": pdf_token}
     except Exception as e:
+        db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
 @chat.post("/cleanup")

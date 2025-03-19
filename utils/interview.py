@@ -4,28 +4,29 @@ from PyPDF2 import PdfReader
 import openai
 from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
-from langchain_community.llms import OpenAI
+from langchain_openai import OpenAI
 from routers.pdf_storage import pdf_storage
 from config import FILE_DIR, API_KEY
-from db import SessionLocal, MainQuestionDB, FollowUpDB, InterviewSessionDB
+from db import SessionLocal, InterviewSessionDB, ChatMessageDB
 from typing import Optional, Dict, Any
+import logging
+
+logger = logging.getLogger(__name__)
 
 class InterviewSession:
     def __init__(self, token: str, question_num=5, answer_per_question=5, mock_data_path=None):
-        self.token = token
+        self.token = token  # PDF 업로드 시 생성된 토큰 사용
+        self.llm = OpenAI(api_key=API_KEY)
         
         # PDF 데이터 로드
         pdf_data = pdf_storage.get_pdf(token)
         if not pdf_data:
-            print(f"⚠️ PDF 데이터를 찾을 수 없음: {token}")
-            # 기본값으로 초기화
-            self.resume = "이력서 데이터가 없습니다."
-            self.recruit_url = "채용 공고 URL이 없습니다."
-        else:
-            self.resume = pdf_data.get("resume_text", "이력서 텍스트를 가져올 수 없습니다.")
-            self.recruit_url = pdf_data.get("recruitUrl", "채용 공고 URL이 없습니다.")
+            raise ValueError(f"토큰 {token}에 해당하는 PDF 데이터가 없습니다.")
         
-        # 세션 초기화
+        self.resume = pdf_data.get("resume_text")
+        self.recruit_url = pdf_data.get("recruitUrl")
+        
+        # 세션 상태 초기화
         self.current_main = 0
         self.current_follow_up = 0
         self.current_answer = 0
@@ -37,6 +38,7 @@ class InterviewSession:
         self.hints = [[] for _ in range(question_num)]
         self.feedbacks = [[] for _ in range(question_num)]
         
+        # DB 세션 확인 및 초기화는 외부에서 처리하도록 변경
         self.mock_data_path = mock_data_path
         self.example_questions = self._load_mock_interview_data(mock_data_path)
 
@@ -62,68 +64,73 @@ class InterviewSession:
             print(f"모의 면접 데이터 로딩 실패: {str(e)}")
             return ""
 
-    #대표질문 생성
     async def generate_main_questions(self, num_questions: int = 5):
-        """여러 개의 대표 질문을 생성하는 메서드"""
+        """대표 질문을 생성하는 메서드"""
         try:
-            questions = []
-            print(f"대표 질문 생성 시작 - 목표 개수: {num_questions}")
+            # 이미 생성된 질문이 있는 경우, 현재 인덱스의 질문 반환
+            if self.main_questions:
+                if self.current_main < len(self.main_questions):
+                    current_question = self.main_questions[self.current_main]
+                    return current_question
+                return "더 이상의 대표질문이 없습니다."
             
-            for i in range(num_questions):
-                print(f"📝 {i+1}번째 질문 생성 시도 중...")
+            # 처음 호출 시 5개의 질문을 모두 생성하여 저장
+            for _ in range(num_questions):
                 question = await self.generate_main_question()
-                
                 if question:
-                    questions.append(question)
-                    print(f"✅ {i+1}번째 질문 생성 성공: {question}")
-                else:
-                    print(f"❌ {i+1}번째 질문 생성 실패")
-                    break
+                    self.main_questions.append(question)
             
-            if not questions:
-                print("❌ 생성된 질문이 없습니다.")
-                return ["대표질문을 생성할 수 없습니다. 잠시 후 다시 시도해주세요."] * num_questions
+            # 첫 번째 질문 반환
+            if self.main_questions:
+                return self.main_questions[0]
             
-            print(f"✅ 총 {len(questions)}개의 질문 생성 완료")
-            print(f"생성된 질문 목록: {questions}")
-            return questions
+            return "대표질문을 생성할 수 없습니다."
             
         except Exception as e:
-            print(f"❌ 질문 생성 중 오류 발생: {str(e)}")
-            return ["대표질문을 생성할 수 없습니다. 잠시 후 다시 시도해주세요."] * num_questions
+            print(f"Error: {str(e)}")
+            return "대표질문을 생성할 수 없습니다."
 
     async def generate_main_question(self):
         try:
             if len(self.main_questions) >= self.question_num:
-                print("❌ 최대 질문 수에 도달했습니다.")
                 return None
             
-            print("📝 프롬프트 생성 중...")
             prompt = PromptTemplate(
                 template=self._get_question_template(),
                 input_variables=['resume', 'job_url']
             )
             chain = LLMChain(prompt=prompt, llm=self.llm)
 
-            question = chain.run({
+            response = chain.run({
                 'resume': self.resume,
                 'job_url': self.recruit_url
             }).strip()
             
-            if "질문:" in question:
-                question = question.split("질문:")[1].strip()
+            # 응답에서 개별 질문 추출
+            questions = []
+            for line in response.split('\n'):
+                line = line.strip()
+                if line and any(f"{i}." in line for i in range(1, 10)):
+                    # 숫자와 점 이후의 텍스트만 추출
+                    question = line.split(".", 1)[1].strip()
+                    questions.append(question)
             
-            # 🔥 수정됨: 생성된 질문을 DB에 저장하도록 변경
+            # 현재 필요한 질문만 선택
+            if questions:
+                question = questions[len(self.main_questions)]  # 현재 인덱스에 해당하는 질문 선택
+            else:
+                return "질문을 생성할 수 없습니다."
+            
+            # DB에 저장
             db = SessionLocal()
             try:
                 session = db.query(InterviewSessionDB).filter_by(session_token=self.token).first()
                 if not session:
-                    print(f"❌ 세션을 찾을 수 없습니다: {self.token}")
                     return None
                 
                 new_question = ChatMessageDB(
                     session_id=session.id,
-                    message_type="main_question",  # 메인 질문 타입 지정
+                    message_type="main_question",
                     content=question
                 )
                 db.add(new_question)
@@ -131,20 +138,16 @@ class InterviewSession:
                 db.refresh(new_question)
                 
                 self.main_questions.append(question)
-                print(f"✅ 질문 생성 성공: {question}")
-                
                 return question
                     
-            except Exception as db_error:
-                print(f"❌ DB 저장 중 오류 발생: {str(db_error)}")
+            except Exception as e:
                 db.rollback()
+                return None
             finally:
                 db.close()
             
-            return None
-            
         except Exception as e:
-            print(f"❌ 질문 생성 중 오류 발생: {str(e)}")
+            print(f"Error: {str(e)}")
             return None
 
     # 꼬리질문 생성
@@ -161,37 +164,26 @@ class InterviewSession:
             # DB에 저장
             db = SessionLocal()
             try:
-                # 현재 세션의 메인 질문을 가져옴
                 session = db.query(InterviewSessionDB).filter_by(session_token=self.token).first()
                 if not session:
-                    print(f"❌ 세션을 찾을 수 없습니다: {self.token}")
                     return question
-                
-                # 현재 메인 질문 인덱스에 해당하는 질문을 가져옴
-                main_questions = db.query(MainQuestionDB).filter_by(session_id=session.id).all()
-                if not main_questions or self.current_main >= len(main_questions):
-                    print(f"❌ 메인 질문을 찾을 수 없습니다: 인덱스 {self.current_main}")
-                    return question
-                
-                main_question = main_questions[self.current_main]
-                
-                new_follow_up = FollowUpDB(
-                    session_id=main_question.session_id,
-                    main_question_id=main_question.id,
+
+                new_follow_up = ChatMessageDB(
+                    session_id=session.id,
+                    message_type="follow_up",
                     content=question
                 )
                 db.add(new_follow_up)
                 db.commit()
                 db.refresh(new_follow_up)
                 
-                # 메모리에도 저장
                 self.follow_up_questions[self.current_main].append(question)
+                return question
             finally:
                 db.close()
 
-            return question
         except Exception as e:
-            print(f"꼬리질문 생성 중 오류 발생: {str(e)}")
+            print(f"Error: {str(e)}")
             return "꼬리질문을 생성할 수 없습니다."
 
     def store_user_answer(self, session_id: int, answer: str):
@@ -249,10 +241,26 @@ class InterviewSession:
             feedback = chain.run({'answer': last_answer})
             feedback = feedback.strip() if feedback else "피드백을 생성할 수 없습니다."
 
-            self.feedbacks[self.current_main].append(feedback)
-            return feedback
+            # DB에 저장
+            db = SessionLocal()
+            try:
+                session = db.query(InterviewSessionDB).filter_by(session_token=self.token).first()
+                if session:
+                    new_feedback = ChatMessageDB(
+                        session_id=session.id,
+                        message_type="feedback",
+                        content=feedback
+                    )
+                    db.add(new_feedback)
+                    db.commit()
+                    
+                    self.feedbacks[self.current_main].append(feedback)
+                return feedback
+            finally:
+                db.close()
+
         except Exception as e:
-            print(f"피드백 생성 중 오류 발생: {str(e)}")
+            print(f"Error: {str(e)}")
             return "피드백을 생성할 수 없습니다."
 
     def _get_question_template(self):

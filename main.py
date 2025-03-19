@@ -46,12 +46,15 @@ async def startup_event():
     await process_videos()  # 영상 추출 후
     await vectorize_and_save()  # 그 후 벡터화 작업 실행
  """
- # 서버 시작 시 실행할 로직 - DB 테이블 생성
+# 서버 시작 시 실행할 로직 - DB 테이블 생성
 @app.on_event("startup")
 async def startup_event():
+    print("Creating database tables...")
     create_tables()  # db.py 안의 create_tables()
-   
+    print("Database tables created successfully!")
+
 # 종료 시 clean file 후 종료 설정
 if __name__ == "__main__":
     atexit.register(clean_files)
-    uvicorn.run("main:app", host=HOST, port=PORT, reload=False)
+    print("Starting server...")
+    uvicorn.run("main:app", host=HOST, port=PORT, reload=True)  # reload를 True로 변경

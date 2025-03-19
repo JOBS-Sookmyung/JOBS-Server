@@ -42,50 +42,41 @@ class UserDB(Base):
     phone = Column(String(50))
     interview_sessions = relationship("InterviewSessionDB", back_populates="user")
 
-# 인터뷰 세션 테이블
 class InterviewSessionDB(Base):
-    __tablename__ = "sessions"
-    id = Column(Integer, primary_key=True)
+    __tablename__ = "interview_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
     user_id = Column(String(50), ForeignKey("users.id"))
-    session_token = Column(String(36), unique=True, nullable=False)
+    session_token = Column(String(36), unique=True, index=True)
+    status = Column(String(50), default="in_progress")
+    current_main_question_index = Column(Integer, default=0)  # 진행 중인 대표질문
+    current_follow_up_index = Column(Integer, default=0)  # 진행 중인 꼬리질문
     created_at = Column(DateTime, default=datetime.utcnow)
-    status = Column(String(20), default="in_progress")  # 진행 중, 완료, 중단
+
+    # UserDB와의 관계 설정
     user = relationship("UserDB", back_populates="interview_sessions")
-    main_questions = relationship("MainQuestionDB", back_populates="session", cascade="all, delete-orphan")
 
-# 대표 질문 테이블
-class MainQuestionDB(Base):
-    __tablename__ = "main_questions"
-    id = Column(Integer, primary_key=True)
-    session_id = Column(Integer, ForeignKey("sessions.id"))
-    content = Column(Text, nullable=False)
-    session = relationship("InterviewSessionDB", back_populates="main_questions")
-    follow_ups = relationship("FollowUpDB", back_populates="main_question", cascade="all, delete-orphan")
+class ChatMessageDB(Base):
+    __tablename__ = "chat_messages"
 
-# 꼬리 질문 테이블 (피드백, 힌트 필드 제거)
-class FollowUpDB(Base):
-    __tablename__ = "follow_ups"
-    id = Column(Integer, primary_key=True)
-    main_question_id = Column(Integer, ForeignKey("main_questions.id"))
-    content = Column(Text, nullable=False)
-    answer = Column(Text, nullable=True)
-    main_question = relationship("MainQuestionDB", back_populates="follow_ups")
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(Integer, ForeignKey("interview_sessions.id"))
+    message_type = Column(String(50))  # VARCHAR(50)으로 변경
+    content = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # 관계 설정
+    session = relationship("InterviewSessionDB", back_populates="messages")
 
-# 채팅 로그 테이블 (timestamp 필드 제거)
-class ChatLogDB(Base):
-    __tablename__ = "chat_logs"
-    id = Column(Integer, primary_key=True)
-    session_id = Column(Integer, ForeignKey("sessions.id"))
-    question_id = Column(Integer, ForeignKey("follow_ups.id"), nullable=True)
-    user_message = Column(Text, nullable=False)
-    system_response = Column(Text, nullable=True)
-    session = relationship("InterviewSessionDB")
+# InterviewSessionDB와 ChatMessageDB 간의 관계 설정
+InterviewSessionDB.messages = relationship("ChatMessageDB", back_populates="session", cascade="all, delete-orphan")
 
 # 테이블 생성
 def create_tables():
     try:
+        print("Creating database tables...")
         Base.metadata.create_all(bind=engine)
-        logger.info("데이터베이스 테이블이 성공적으로 생성되었습니다.")
+        print("Database tables created successfully!")
     except Exception as e:
-        logger.error(f"테이블 생성 중 오류 발생: {str(e)}")
-        raise
+        print(f"Error creating database tables: {str(e)}")
+        raise e

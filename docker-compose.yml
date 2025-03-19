@@ -1,7 +1,7 @@
 services:
   sql:
     image: mysql:8.0
-    container_name: jobs_mysql_v2_0309
+    container_name: jobs_mysql
     environment:
       MYSQL_ROOT_PASSWORD: rootpassword
       MYSQL_DATABASE: jobs

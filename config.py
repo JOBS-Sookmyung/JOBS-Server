@@ -29,6 +29,3 @@ NOSQL_URL = os.getenv("NOSQL_URL")
 API_KEY = os.getenv("OPENAI_API_KEY")
 PAFY_KEY = os.getenv("PAFY_KEY")
 
-# Redis 설정 추가
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-REDIS_SESSION_EXPIRE = 3600  # 세션 만료 시간 (1시간)

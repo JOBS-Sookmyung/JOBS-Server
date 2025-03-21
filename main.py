@@ -4,6 +4,7 @@ from routers import input  # questions 제거
 from config import HOST, PORT, ORIGIN_REGEX
 from utils import clean_files
 from routers.login import router as login_router
+# from db import create_tables, cleanup_tables  # cleanup_tables 추가
 from db import create_tables
 from routers.chat import chat
 from routers.recommendations import recommendations  # 추가
@@ -52,6 +53,19 @@ async def startup_event():
     print("Creating database tables...")
     create_tables()  # db.py 안의 create_tables()
     print("Database tables created successfully!")
+
+# 서버 종료 시 실행할 로직 - 테이블 데이터 정리
+@app.on_event("shutdown")
+async def shutdown_event():
+    print("Cleaning up tables...")
+    # cleanup_tables()  # 모든 테이블 데이터 삭제
+    print("Tables cleaned up successfully!")
+
+# @app.on_event("shutdown")
+# async def shutdown_event():
+#     print("Cleaning up old sessions...")
+#     cleanup_old_sessions()
+#     print("Cleanup completed!")
 
 # 종료 시 clean file 후 종료 설정
 if __name__ == "__main__":

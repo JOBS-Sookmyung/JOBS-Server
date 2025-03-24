@@ -10,6 +10,7 @@ from config import FILE_DIR, API_KEY
 from db import SessionLocal, InterviewSessionDB, ChatMessageDB
 from typing import Optional, Dict, Any
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -106,8 +107,16 @@ class InterviewSession:
                     logger.error("질문을 추출할 수 없습니다.")
                     raise ValueError("질문 생성 실패")
                 
+                # 인덱싱 제거 (예: "1. ", "2. " 등의 패턴 제거)
+                cleaned_questions = []
+                for q in questions:
+                    # 숫자와 점으로 시작하는 인덱싱 패턴 제거
+                    # 예: "1. ", "2. " 등
+                    cleaned_q = re.sub(r'^\d+\.\s*', '', q)
+                    cleaned_questions.append(cleaned_q)
+                
                 # 최대 5개 질문만 저장
-                self.main_questions = questions[:5]
+                self.main_questions = cleaned_questions[:5]
                 logger.info(f"대표질문 {len(self.main_questions)}개 생성 완료")
                 
                 return self.main_questions
@@ -162,7 +171,7 @@ class InterviewSession:
                 await self.check_session_completion()
                 return None
 
-            # 현재 질문 반환
+            # 현재 질문 반환 (인덱싱 없이 질문 자체만 반환)
             question = self.main_questions[self.current_main]
             logger.info(f"대표질문 {self.current_main + 1} 반환: {question}")
             
@@ -376,6 +385,7 @@ class InterviewSession:
         2. Be specific and tailored to the resume.
         3. Be similar to the example questions.
         4. Write only the question, without additional explanations or comments.
+        5. Do not add numbering or indexing to the questions (like "1. ", "2. ", etc.).
         '''
 
     def _get_follow_up_template(self):
@@ -424,21 +434,11 @@ class InterviewSession:
 
     def _get_feedback_template(self):
         return f'''
-        
-        You are an expert Korean career coach providing detailed interview feedback in Korean.  
-        Based on the given answer, write interview feedback that must satisfy all of the following:
+        You are a Korean career coach.  
+        Please provide concise interview feedback in Korean based on the answer provided.
 
-    1. Write in **Korean** using clear, natural, and professional language suitable for a job interview setting.
-    2. Start by specifically **praising the strengths** of the answer (e.g., structure, vocabulary choice, confidence, relevance to the job).
-    3. Then, **kindly point out any areas that need improvement**, such as:
-        - lack of detail or examples
-        - vague or repetitive expressions
-        - unclear logic or unnatural flow
-        - weak connection to the job role
-    4. For each weakness, provide **practical and specific suggestions** in Korean.
-    5. The tone must be **encouraging and supportive** throughout. Always include a **positive closing comment**.
-    6. Organize the feedback into **paragraphs by theme**: strengths, improvement areas, and actionable suggestions.
-    7. Keep the feedback within the 1,750-token limit of GPT-4 Turbo, but make it as detailed and helpful as possible within that range.
+        - First, briefly praise the strengths (structure, clarity, relevance, etc.).
+        - Then, point out one area for improvement with a practical suggestion.
+        - Keep the feedback short and professional (max two paragraphs).
         '''
-
      

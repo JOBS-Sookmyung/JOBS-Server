@@ -88,22 +88,95 @@ async def get_chat(token: str, db: Session = Depends(get_db)):
             .order_by(ChatMessageDB.created_at.asc())\
             .all()
         
+        # 메시지 타입별 우선순위 정의
+        type_priority = {
+            "main_question": 1,
+            "user_answer": 2,
+            "feedback": 3,
+            "follow_up": 4
+        }
+        
+        # 메시지를 시간순으로 정렬하되, 같은 시간대의 메시지는 타입 우선순위에 따라 정렬
+        sorted_messages = []
+        for msg in messages:
+            sorted_messages.append({
+                "type": msg.message_type,
+                "text": msg.content,
+                "timestamp": msg.created_at,
+                "priority": type_priority.get(msg.message_type, 5)
+            })
+        
+        # 시간순으로 정렬하되, 같은 시간대의 메시지는 타입 우선순위에 따라 정렬
+        sorted_messages.sort(key=lambda x: (x["timestamp"], x["priority"]))
+        
+        # 우선순위 필드 제거
+        for msg in sorted_messages:
+            del msg["priority"]
+        
         # 메시지 목록 반환
         return {
             "session_token": token,
-            "messages": [
-                {
-                    "type": msg.message_type,
-                    "text": msg.content
-                }
-                for msg in messages
-            ],
+            "messages": sorted_messages,
             "status": session.status
         }
         
     except Exception as e:
         logger.error(f"채팅 내역 조회 중 오류 발생: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@chat.get("/get_chat")
+async def get_chat(session_token: str):
+    """채팅 내역을 새로고침할 때 사용되는 엔드포인트"""
+    try:
+        db = SessionLocal()
+        try:
+            # 세션 조회
+            session = db.query(InterviewSessionDB).filter_by(session_token=session_token).first()
+            if not session:
+                raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다.")
+
+            # 메시지 조회
+            messages = db.query(ChatMessageDB)\
+                .filter_by(session_id=session.id)\
+                .order_by(ChatMessageDB.created_at.asc())\
+                .all()
+            
+            # 메시지 타입별 우선순위 정의
+            type_priority = {
+                "main_question": 1,
+                "user_answer": 2,
+                "feedback": 3,
+                "follow_up": 4
+            }
+            
+            # 메시지를 시간순으로 정렬하되, 같은 시간대의 메시지는 타입 우선순위에 따라 정렬
+            sorted_messages = []
+            for msg in messages:
+                sorted_messages.append({
+                    "type": msg.message_type,
+                    "text": msg.content,
+                    "timestamp": msg.created_at,
+                    "priority": type_priority.get(msg.message_type, 5)
+                })
+            
+            # 시간순으로 정렬하되, 같은 시간대의 메시지는 타입 우선순위에 따라 정렬
+            sorted_messages.sort(key=lambda x: (x["timestamp"], x["priority"]))
+            
+            # 우선순위 필드 제거
+            for msg in sorted_messages:
+                del msg["priority"]
+            
+            return {
+                "status": "success",
+                "messages": sorted_messages
+            }
+            
+        finally:
+            db.close()
+            
+    except Exception as e:
+        logger.error(f"채팅 내역 조회 중 오류 발생: {str(e)}")
+        raise HTTPException(status_code=500, detail="채팅 내역을 조회할 수 없습니다.")
 
 @chat.post("/answer/{token}")
 async def submit_answer(token: str, request: AnswerRequest, db: Session = Depends(get_db)):
@@ -193,7 +266,11 @@ async def get_follow_up_question(token: str, request: FollowUpRequest, db: Sessi
             session.current_follow_up_index += 1
             db.commit()
             
-            return {"question": follow_up, "type": "follow_up", "follow_up_count": session.current_follow_up_index}
+            return {
+                "question": follow_up, 
+                "type": "follow_up", 
+                "follow_up_count": session.current_follow_up_index
+            }
         
         return {"question": None, "type": "no_question"}
     except Exception as e:

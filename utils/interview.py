@@ -10,6 +10,7 @@ from config import FILE_DIR, API_KEY
 from db import SessionLocal, InterviewSessionDB, ChatMessageDB
 from typing import Optional, Dict, Any
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -162,8 +163,10 @@ class InterviewSession:
                 await self.check_session_completion()
                 return None
 
-            # 현재 질문 반환
+            # 현재 질문 반환 (인덱싱 제거)
             question = self.main_questions[self.current_main]
+            # 인덱싱 제거 (예: "1. ", "2. " 등)
+            question = re.sub(r'^\d+\.\s*', '', question)
             logger.info(f"대표질문 {self.current_main + 1} 반환: {question}")
             
             return question
@@ -378,6 +381,8 @@ class InterviewSession:
         3. Be similar to the example questions.
         4. Write only the question, without additional explanations or comments.
         5. Do not add numbering or indexing to the questions (like "1. ", "2. ", etc.).
+        6. Each question should be on a new line.
+        7. Do not add any numbering or bullet points.
         '''
 
     def _get_follow_up_template(self):

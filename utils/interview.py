@@ -46,13 +46,25 @@ class InterviewSession:
         self.example_questions = self._load_mock_interview_data(mock_data_path)
 
     def _load_mock_interview_data(self, mock_data_path=None):
-        if not mock_data_path:
-            mock_data_path = os.path.join(FILE_DIR, "mock_interview_data.json")
-        
+        """면접 질문 데이터를 로드하는 메서드"""
         try:
-            if os.path.exists(mock_data_path):
+            # 1. 먼저 jobkorea.csv 파일 확인
+            csv_path = os.path.join(FILE_DIR, "data", "jobkorea.csv")
+            if os.path.exists(csv_path):
+                # CSV 파일에서 질문 데이터 로드
+                df = pd.read_csv(csv_path)
+                
+                # 이력서의 직무와 관련된 질문 필터링 (예시)
+                # resume_text에서 직무 키워드 추출 로직 필요
+                filtered_questions = df['question'].sample(n=5).tolist()  # 임시로 랜덤 5개 선택
+                return "\n".join(filtered_questions)
+                
+            # 2. CSV가 없으면 기존 JSON 파일 확인
+            elif mock_data_path and os.path.exists(mock_data_path):
                 df = pd.read_json(mock_data_path)
                 return "\n".join(df['question'].tolist()[:5])
+                
+            # 3. 둘 다 없으면 기본 질문 반환
             else:
                 return """
                 프로젝트에서 가장 큰 도전 과제는 무엇이었나요?
@@ -62,8 +74,15 @@ class InterviewSession:
                 가장 성공적으로 완료한 프로젝트는 무엇인가요?
                 """
         except Exception as e:
-            print(f"모의 면접 데이터 로딩 실패: {str(e)}")
-            return ""
+            logger.error(f"면접 데이터 로딩 실패: {str(e)}")
+            # 오류 발생 시 기본 질문 반환
+            return """
+            프로젝트에서 가장 큰 도전 과제는 무엇이었나요?
+            팀 프로젝트에서 갈등이 발생했을 때 어떻게 해결하셨나요?
+            기술 스택을 선택한 이유는 무엇인가요?
+            프로젝트에서 본인의 역할은 무엇이었나요?
+            가장 성공적으로 완료한 프로젝트는 무엇인가요?
+            """
 
     async def generate_main_questions(self, num_questions: int = 5):
         """대표 질문을 생성하는 메서드"""
@@ -85,38 +104,59 @@ class InterviewSession:
             chain = LLMChain(prompt=prompt, llm=self.llm)
             
             try:
-                response = await chain.ainvoke({
-                    'resume': self.resume[:1000],  # 이력서 텍스트 길이 제한
-                    'recruit_url': self.recruit_url,
-                    'example_questions': self.example_questions
-                })
+                # 중복 없는 질문을 얻을 때까지 최대 3번 시도
+                max_attempts = 3
+                unique_questions = set()
                 
-                if not response or not isinstance(response, dict):
-                    logger.error(f"잘못된 응답 형식: {response}")
-                    raise ValueError("질문 생성 실패")
+                for attempt in range(max_attempts):
+                    response = await chain.ainvoke({
+                        'resume': self.resume[:1000],  # 이력서 텍스트 길이 제한
+                        'recruit_url': self.recruit_url,
+                        'example_questions': self.example_questions
+                    })
+                    
+                    if not response or not isinstance(response, dict):
+                        logger.error(f"잘못된 응답 형식: {response}")
+                        continue
+                    
+                    # 응답에서 질문 추출 및 정제
+                    questions_text = response.get('text', '').strip()
+                    if not questions_text:
+                        logger.error("응답에서 텍스트를 찾을 수 없습니다.")
+                        continue
+                    
+                    # 질문 분리 및 저장
+                    questions = [q.strip() for q in questions_text.split('\n') if q.strip()]
+                    
+                    # 인덱싱 제거 및 중복 제거
+                    for q in questions:
+                        # 숫자와 점으로 시작하는 인덱싱 패턴 제거
+                        cleaned_q = re.sub(r'^\d+\.\s*', '', q)
+                        # 유사도 검사를 위해 질문 정규화
+                        normalized_q = re.sub(r'\s+', ' ', cleaned_q.lower())
+                        
+                        # 이미 존재하는 질문과 유사도 검사
+                        is_duplicate = False
+                        for existing_q in unique_questions:
+                            # 간단한 유사도 검사 (더 정교한 방법으로 대체 가능)
+                            if self._calculate_similarity(normalized_q, existing_q.lower()) > 0.8:
+                                is_duplicate = True
+                                break
+                        
+                        if not is_duplicate:
+                            unique_questions.add(cleaned_q)
+                    
+                    # 충분한 수의 고유한 질문을 얻었는지 확인
+                    if len(unique_questions) >= num_questions:
+                        break
+                    
+                    logger.info(f"시도 {attempt + 1}: {len(unique_questions)}개의 고유한 질문 생성됨")
                 
-                # 응답에서 질문 추출 및 정제
-                questions_text = response.get('text', '').strip()
-                if not questions_text:
-                    logger.error("응답에서 텍스트를 찾을 수 없습니다.")
-                    raise ValueError("질문 생성 실패")
-                
-                # 질문 분리 및 저장
-                questions = [q.strip() for q in questions_text.split('\n') if q.strip()]
-                if not questions:
-                    logger.error("질문을 추출할 수 없습니다.")
-                    raise ValueError("질문 생성 실패")
-                
-                # 인덱싱 제거 (예: "1. ", "2. " 등의 패턴 제거)
-                cleaned_questions = []
-                for q in questions:
-                    # 숫자와 점으로 시작하는 인덱싱 패턴 제거
-                    # 예: "1. ", "2. " 등
-                    cleaned_q = re.sub(r'^\d+\.\s*', '', q)
-                    cleaned_questions.append(cleaned_q)
+                if not unique_questions:
+                    raise ValueError("질문을 추출할 수 없습니다.")
                 
                 # 최대 5개 질문만 저장
-                self.main_questions = cleaned_questions[:5]
+                self.main_questions = list(unique_questions)[:5]
                 logger.info(f"대표질문 {len(self.main_questions)}개 생성 완료")
                 
                 return self.main_questions
@@ -128,6 +168,18 @@ class InterviewSession:
         except Exception as e:
             logger.error(f"대표질문 생성 중 오류 발생: {str(e)}")
             raise ValueError("대표질문을 생성할 수 없습니다.")
+
+    def _calculate_similarity(self, text1: str, text2: str) -> float:
+        """두 텍스트 간의 유사도를 계산하는 간단한 메서드"""
+        # 각 텍스트를 단어 집합으로 변환
+        words1 = set(text1.split())
+        words2 = set(text2.split())
+        
+        # Jaccard 유사도 계산
+        intersection = len(words1.intersection(words2))
+        union = len(words1.union(words2))
+        
+        return intersection / union if union > 0 else 0.0
 
     async def check_session_completion(self):
         """세션이 완료되었는지 확인하고 상태를 업데이트하는 메서드"""
@@ -433,12 +485,20 @@ class InterviewSession:
         '''
 
     def _get_feedback_template(self):
-        return f'''
-        You are a Korean career coach.  
-        Please provide concise interview feedback in Korean based on the answer provided.
+        return '''
+        You are an expert Korean career coach.  
+        Based on the provided question and answer, write professional and helpful interview feedback in Korean.
 
-        - First, briefly praise the strengths (structure, clarity, relevance, etc.).
-        - Then, point out one area for improvement with a practical suggestion.
-        - Keep the feedback short and professional (max two paragraphs).
+        [질문]
+        {main_question}
+
+        [답변]
+        {answer}
+
+        [작성 지침]
+        - 반드시 세 문장 이내로 작성합니다.
+        - 첫 번째 문장: 답변의 강점을 2~3가지 구체적으로 칭찬합니다. (구조, 논리, 표현, 직무 연관성 등)
+        - 두 번째 문장: 개선할 점 1~2가지를 구체적이고 친절하게 제시합니다. (예: 더 구체적이어야 한다, 논리 흐름이 약하다 등)
         '''
+
      

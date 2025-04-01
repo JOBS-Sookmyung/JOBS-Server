@@ -1,4 +1,6 @@
 # 일회성 코드 -> 주석 해제하지 마세요.
+'''
+# 일회성 코드 -> 주석 해제하지 마세요.
 import os
 import faiss
 from sentence_transformers import SentenceTransformer
@@ -7,7 +9,7 @@ import numpy as np
 import pickle
 
 # CSV 파일 불러오기
-df = pd.read_csv('/Users/jeongsu-in/JOBS-Server/data/jobkorea.csv')
+df = pd.read_csv('../data/jobkorea.csv')
 
 # wide 형태를 tidy 형태로 변환하는 함수
 def data_preprocess():
@@ -41,8 +43,8 @@ def main():
     index.add(np.array(question_embeddings))
 
     # 5. 인덱스와 매핑 정보를 저장
-    faiss.write_index(index, "/Users/jeongsu-in/JOBS-Server/faiss_index.jobkorea")  # 벡터 인덱스 -> 인덱스로 아래 질문/답변이랑 연결지어야함
-    with open("/Users/jeongsu-in/JOBS-Server/faiss_qa_mapping.pkl", "wb") as f:  # 질문/답변 매핑 정보
+    faiss.write_index(index, "../faiss_index.jobkorea")  # 벡터 인덱스 -> 인덱스로 아래 질문/답변이랑 연결지어야함
+    with open("../faiss_qa_mapping.pkl", "wb") as f:  # 질문/답변 매핑 정보
         pickle.dump(qa_df.to_dict(orient='records'), f)
 
     print("✅ 임베딩 및 FAISS 인덱싱 완료!")
@@ -50,3 +52,4 @@ def main():
 # 🔥 실행 트리거
 if __name__ == "__main__":
     main()
+'''

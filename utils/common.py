@@ -50,7 +50,7 @@ def summarize_text(text, max_length=1000):
 
 # CSV 파일에서 모의 면접 데이터 읽기 (프롬프트 예시를 위해)
 def load_mock_interview_data(csv_path, num_examples=2):
-    csv_path = "/Users/jeongsu-in/JOBS-Server-2/data/jobkorea.csv"
+    csv_path = "/Users/SM-PC/Desktop/push/JOBS-Server/data/jobkorea.csv"
     df = pd.read_csv(csv_path)
     sample_data = df.sample(n=num_examples)
     examples = [

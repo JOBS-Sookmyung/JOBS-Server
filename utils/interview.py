@@ -1,5 +1,6 @@
 import os
 import pandas as pd
+import numpy as np
 from PyPDF2 import PdfReader
 import openai
 from langchain.prompts import PromptTemplate
@@ -11,8 +12,16 @@ from db import SessionLocal, InterviewSessionDB, ChatMessageDB
 from typing import Optional, Dict, Any
 import logging
 import re
+from sentence_transformers import SentenceTransformer
+import faiss
+import pickle
 
 logger = logging.getLogger(__name__)
+
+# FAISS 파일 경로 설정
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+FAISS_INDEX_PATH = os.path.join(BASE_DIR, "faiss_index.jobkorea")
+FAISS_MAPPING_PATH = os.path.join(BASE_DIR, "faiss_qa_mapping.pkl")
 
 class InterviewSession:
     def __init__(self, token: str, question_num=5, answer_per_question=5, mock_data_path=None):
@@ -44,6 +53,24 @@ class InterviewSession:
         
         self.mock_data_path = mock_data_path
         self.example_questions = self._load_mock_interview_data(mock_data_path)
+        
+        # FAISS 관련 초기화
+        self._init_faiss()
+
+    def _init_faiss(self):
+        """FAISS 관련 초기화"""
+        try:
+            if not os.path.exists(FAISS_INDEX_PATH) or not os.path.exists(FAISS_MAPPING_PATH):
+                raise FileNotFoundError("FAISS 인덱스 또는 매핑 파일이 없습니다.")
+            
+            self.index = faiss.read_index(FAISS_INDEX_PATH)
+            with open(FAISS_MAPPING_PATH, "rb") as f:
+                self.mapping = pickle.load(f)
+            
+            logger.info("✅ FAISS 인덱스 및 매핑 로드 완료")
+        except Exception as e:
+            logger.error(f"FAISS 초기화 실패: {str(e)}")
+            raise
 
     def _load_mock_interview_data(self, mock_data_path=None):
         if not mock_data_path:
@@ -64,86 +91,77 @@ class InterviewSession:
         except Exception as e:
             print(f"모의 면접 데이터 로딩 실패: {str(e)}")
             return ""
-
+        
     async def generate_main_questions(self, num_questions: int = 5):
-        """대표 질문을 생성하는 메서드"""
         try:
-            # 이미 생성된 질문이 있는 경우 반환
             if self.main_questions:
                 logger.info("이미 생성된 질문이 있습니다.")
                 return self.main_questions
 
-            logger.info("새로운 대표질문 생성 시작")
-            
-            # 프롬프트 준비
+            logger.info("🎯 [generate_main_questions] 대표 질문 생성 시작")
+
+            # 1. RAG 기반 우선 시도
+            try:
+                query_text = f"{self.resume[:1000]} {self.recruit_url[:500]}"
+                model = SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')
+                query_embedding = model.encode([query_text])
+                faiss.normalize_L2(query_embedding)
+
+                top_k = min(10, len(self.mapping))
+                distances, indices = self.index.search(np.array(query_embedding), top_k)
+                retrieved_questions = [self.mapping[i]['question'] for i in indices[0]]
+
+                logger.info(f"📥 유사 질문 {len(retrieved_questions)}개 추출됨")
+
+                # LLM 정제
+                prompt = PromptTemplate(
+                    template=self._get_rag_question_template(),
+                    input_variables=['retrieved_questions', 'resume', 'recruit_url']
+                )
+                chain = LLMChain(prompt=prompt, llm=self.llm)
+                response = await chain.ainvoke({
+                    'retrieved_questions': "\n".join(retrieved_questions),
+                    'resume': self.resume[:1000],
+                    'recruit_url': self.recruit_url[:500]
+                })
+
+                questions = [q.strip() for q in response.get('text', '').split('\n') if q.strip()]
+                if questions:
+                    self.main_questions = questions[:num_questions]
+                    logger.info(f"✅ RAG 기반 대표질문 {len(self.main_questions)}개 생성 완료")
+                    return self.main_questions
+                else:
+                    logger.warning("📭 RAG 기반 질문 생성 실패, 프롬프트 방식으로 대체")
+
+            except Exception as e:
+                logger.warning(f"❗ RAG 실패 → 프롬프트 기반으로 전환: {str(e)}")
+
+            # 2. Fallback: 기존 프롬프트 방식
             prompt = PromptTemplate(
                 template=self._get_question_template(),
                 input_variables=['resume', 'recruit_url', 'example_questions']
             )
-            
-            # LLMChain 생성 및 실행
             chain = LLMChain(prompt=prompt, llm=self.llm)
-            
-            try:
-                response = await chain.ainvoke({
-                    'resume': self.resume[:1000],  # 이력서 텍스트 길이 제한
-                    'recruit_url': self.recruit_url,
-                    'example_questions': self.example_questions
-                })
-                
-                if not response or not isinstance(response, dict):
-                    logger.error(f"잘못된 응답 형식: {response}")
-                    raise ValueError("질문 생성 실패")
-                
-                # 응답에서 질문 추출 및 정제
-                questions_text = response.get('text', '').strip()
-                if not questions_text:
-                    logger.error("응답에서 텍스트를 찾을 수 없습니다.")
-                    raise ValueError("질문 생성 실패")
-                
-                # 질문 분리 및 저장
-                questions = [q.strip() for q in questions_text.split('\n') if q.strip()]
-                if not questions:
-                    logger.error("질문을 추출할 수 없습니다.")
-                    raise ValueError("질문 생성 실패")
-                
-                # 최대 5개 질문만 저장
-                self.main_questions = questions[:5]
-                logger.info(f"대표질문 {len(self.main_questions)}개 생성 완료")
-                
-                return self.main_questions
-                    
-            except Exception as e:
-                logger.error(f"LLM 체인 실행 중 오류: {str(e)}")
-                raise
-            
+            response = await chain.ainvoke({
+                'resume': self.resume[:1000],
+                'recruit_url': self.recruit_url,
+                'example_questions': self.example_questions
+            })
+
+            questions_text = response.get('text', '').strip()
+            if not questions_text:
+                logger.error("⚠️ 프롬프트 기반 응답도 실패")
+                raise ValueError("질문 생성 실패")
+
+            questions = [q.strip() for q in questions_text.split('\n') if q.strip()]
+            self.main_questions = questions[:num_questions]
+            logger.info(f"✅ 프롬프트 기반 대표질문 {len(self.main_questions)}개 생성 완료")
+            return self.main_questions
+
         except Exception as e:
-            logger.error(f"대표질문 생성 중 오류 발생: {str(e)}")
+            logger.error(f"❌ 대표질문 생성 중 오류 발생: {str(e)}")
             raise ValueError("대표질문을 생성할 수 없습니다.")
 
-    async def check_session_completion(self):
-        """세션이 완료되었는지 확인하고 상태를 업데이트하는 메서드"""
-        try:
-            # 모든 대표질문에 대해 충분한 답변이 있는지 확인
-            if self.current_main >= len(self.main_questions):
-                # DB에서 세션 상태 업데이트
-                db = SessionLocal()
-                try:
-                    session = db.query(InterviewSessionDB).filter_by(session_token=self.token).first()
-                    if session:
-                        session.status = "completed"
-                        db.commit()
-                        logger.info(f"세션 {self.token} 완료 처리됨")
-                except Exception as e:
-                    logger.error(f"세션 상태 업데이트 중 오류: {str(e)}")
-                    db.rollback()
-                finally:
-                    db.close()
-                return True
-            return False
-        except Exception as e:
-            logger.error(f"세션 완료 확인 중 오류: {str(e)}")
-            return False
 
     async def generate_main_question(self):
         """저장된 대표 질문을 하나씩 반환하는 메서드"""
@@ -361,6 +379,29 @@ class InterviewSession:
             logger.error(f"피드백 생성 중 오류: {str(e)}")
             return "피드백을 생성할 수 없습니다."
 
+
+    def _get_rag_question_template(self):
+        return '''
+        You are an expert AI job interviewer. Based on the retrieved similar questions and the candidate's resume, generate interview questions.
+
+        [Retrieved Similar Questions]
+        {retrieved_questions}
+
+        [Resume]
+        {resume}
+
+        [Job Description]
+        {recruit_url}
+
+        Requirements:
+        1. Generate questions in Korean.
+        2. Questions should be specific and tailored to the resume.
+        3. Questions should be similar in style to the retrieved questions.
+        4. Write only the questions, without additional explanations.
+        5. Do not add numbering or bullet points.
+        6. Each question should be on a new line.
+        7. Generate at least 5 questions.
+        '''
 
     def _get_question_template(self):
         return f'''

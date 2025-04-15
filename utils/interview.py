@@ -92,6 +92,14 @@ class InterviewSession:
             print(f"모의 면접 데이터 로딩 실패: {str(e)}")
             return ""
         
+    # RAG 시작부분 -> 벡터 인덱스, 매핑 정보 가져오기    
+    def _load_faiss_index(self):
+        # 벡터 인덱스와 매핑 정보 로드
+        index = faiss.read_index("../faiss_index.jobkorea")
+        with open("../faiss_qa_mapping.pkl", "rb") as f:
+            mapping = pickle.load(f)
+        return index, mapping
+
     async def generate_main_questions(self, num_questions: int = 5):
         try:
             if self.main_questions:
@@ -100,16 +108,20 @@ class InterviewSession:
 
             logger.info("🎯 [generate_main_questions] 대표 질문 생성 시작")
 
-            # 1. RAG 기반 우선 시도
+        # 1. RAG 기반 우선 시도
             try:
                 query_text = f"{self.resume[:1000]} {self.recruit_url[:500]}"
                 model = SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')
                 query_embedding = model.encode([query_text])
                 faiss.normalize_L2(query_embedding)
 
-                top_k = min(10, len(self.mapping))
-                distances, indices = self.index.search(np.array(query_embedding), top_k)
-                retrieved_questions = [self.mapping[i]['question'] for i in indices[0]]
+                index = faiss.read_index("../faiss_index.jobkorea")
+                with open("../faiss_qa_mapping.pkl", "rb") as f:
+                    mapping = pickle.load(f)
+
+                top_k = min(10, len(mapping))
+                distances, indices = index.search(np.array(query_embedding), top_k)
+                retrieved_questions = [mapping[i]['question'] for i in indices[0]]
 
                 logger.info(f"📥 유사 질문 {len(retrieved_questions)}개 추출됨")
 

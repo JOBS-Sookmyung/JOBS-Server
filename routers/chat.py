@@ -34,6 +34,7 @@ class FollowUpRequest(BaseModel):
 
 class StartChatRequest(BaseModel):
     pdf_token: str
+    user_id: str
 
 class ChatSession(BaseModel):
     session_token: str
@@ -42,10 +43,11 @@ class ChatSession(BaseModel):
     last_message: Optional[str] = None
     last_message_type: Optional[str] = None
 
-async def create_new_session(db: Session, session_token: str):
+async def create_new_session(db: Session, session_token: str, user_id: str):
     """ 새로운 세션을 생성하고 첫 번째 질문을 저장하는 함수 """
     session = InterviewSessionDB(
         session_token=session_token,
+        user_id=user_id,  # 유저 아이디 추가
         status="in_progress",
         current_main_question_index=0,
         current_follow_up_index=0
@@ -70,6 +72,7 @@ async def create_new_session(db: Session, session_token: str):
     
     return session
 
+
 @chat.get("/{token}")
 async def get_chat(token: str, db: Session = Depends(get_db)):
     """특정 세션의 채팅 내역을 조회합니다."""
@@ -85,22 +88,95 @@ async def get_chat(token: str, db: Session = Depends(get_db)):
             .order_by(ChatMessageDB.created_at.asc())\
             .all()
         
+        # 메시지 타입별 우선순위 정의
+        type_priority = {
+            "main_question": 1,
+            "user_answer": 2,
+            "feedback": 3,
+            "follow_up": 4
+        }
+        
+        # 메시지를 시간순으로 정렬하되, 같은 시간대의 메시지는 타입 우선순위에 따라 정렬
+        sorted_messages = []
+        for msg in messages:
+            sorted_messages.append({
+                "type": msg.message_type,
+                "text": msg.content,
+                "timestamp": msg.created_at,
+                "priority": type_priority.get(msg.message_type, 5)
+            })
+        
+        # 시간순으로 정렬하되, 같은 시간대의 메시지는 타입 우선순위에 따라 정렬
+        sorted_messages.sort(key=lambda x: (x["timestamp"], x["priority"]))
+        
+        # 우선순위 필드 제거
+        for msg in sorted_messages:
+            del msg["priority"]
+        
         # 메시지 목록 반환
         return {
             "session_token": token,
-            "messages": [
-                {
-                    "type": msg.message_type,
-                    "text": msg.content
-                }
-                for msg in messages
-            ],
+            "messages": sorted_messages,
             "status": session.status
         }
         
     except Exception as e:
         logger.error(f"채팅 내역 조회 중 오류 발생: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@chat.get("/get_chat")
+async def get_chat(session_token: str):
+    """채팅 내역을 새로고침할 때 사용되는 엔드포인트"""
+    try:
+        db = SessionLocal()
+        try:
+            # 세션 조회
+            session = db.query(InterviewSessionDB).filter_by(session_token=session_token).first()
+            if not session:
+                raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다.")
+
+            # 메시지 조회
+            messages = db.query(ChatMessageDB)\
+                .filter_by(session_id=session.id)\
+                .order_by(ChatMessageDB.created_at.asc())\
+                .all()
+            
+            # 메시지 타입별 우선순위 정의
+            type_priority = {
+                "main_question": 1,
+                "user_answer": 2,
+                "feedback": 3,
+                "follow_up": 4
+            }
+            
+            # 메시지를 시간순으로 정렬하되, 같은 시간대의 메시지는 타입 우선순위에 따라 정렬
+            sorted_messages = []
+            for msg in messages:
+                sorted_messages.append({
+                    "type": msg.message_type,
+                    "text": msg.content,
+                    "timestamp": msg.created_at,
+                    "priority": type_priority.get(msg.message_type, 5)
+                })
+            
+            # 시간순으로 정렬하되, 같은 시간대의 메시지는 타입 우선순위에 따라 정렬
+            sorted_messages.sort(key=lambda x: (x["timestamp"], x["priority"]))
+            
+            # 우선순위 필드 제거
+            for msg in sorted_messages:
+                del msg["priority"]
+            
+            return {
+                "status": "success",
+                "messages": sorted_messages
+            }
+            
+        finally:
+            db.close()
+            
+    except Exception as e:
+        logger.error(f"채팅 내역 조회 중 오류 발생: {str(e)}")
+        raise HTTPException(status_code=500, detail="채팅 내역을 조회할 수 없습니다.")
 
 @chat.post("/answer/{token}")
 async def submit_answer(token: str, request: AnswerRequest, db: Session = Depends(get_db)):
@@ -124,6 +200,9 @@ async def submit_answer(token: str, request: AnswerRequest, db: Session = Depend
         
         # 피드백 생성
         feedback = await interview_session.generate_feedback(request.answer)
+        if not feedback:
+            raise HTTPException(status_code=500, detail="피드백을 생성할 수 없습니다.")
+            
         feedback_message = ChatMessageDB(
             session_id=session.id,
             message_type="feedback",
@@ -187,7 +266,11 @@ async def get_follow_up_question(token: str, request: FollowUpRequest, db: Sessi
             session.current_follow_up_index += 1
             db.commit()
             
-            return {"question": follow_up, "type": "follow_up", "follow_up_count": session.current_follow_up_index}
+            return {
+                "question": follow_up, 
+                "type": "follow_up", 
+                "follow_up_count": session.current_follow_up_index
+            }
         
         return {"question": None, "type": "no_question"}
     except Exception as e:
@@ -196,11 +279,11 @@ async def get_follow_up_question(token: str, request: FollowUpRequest, db: Sessi
         raise HTTPException(status_code=500, detail=str(e))
 
 @chat.get("/all/sessions")
-async def get_sessions(db: Session = Depends(get_db)):
+async def get_sessions(user_id: str, db: Session = Depends(get_db)):
     try:
-        # id가 NULL이 아닌 세션만 조회 (최신순)
+        # 유저 ID를 기준으로 세션을 필터링 (최신순)
         sessions = db.query(InterviewSessionDB)\
-            .filter(InterviewSessionDB.id.isnot(None))\
+            .filter(InterviewSessionDB.user_id == user_id)\
             .order_by(InterviewSessionDB.created_at.desc())\
             .all()
 
@@ -233,8 +316,9 @@ async def get_sessions(db: Session = Depends(get_db)):
 
 
 
+
 @chat.post("/start/{pdf_token}")
-async def start_chat(pdf_token: str, db: Session = Depends(get_db)):
+async def start_chat(pdf_token: str, request: StartChatRequest, db: Session = Depends(get_db)):
     """새로운 채팅 세션을 시작하는 API"""
     try:
         # PDF 토큰 존재 여부 확인
@@ -259,7 +343,7 @@ async def start_chat(pdf_token: str, db: Session = Depends(get_db)):
         # 새 세션 생성
         try:
             logger.info(f"새 세션 생성 시도: {pdf_token}")
-            session = await create_new_session(db, pdf_token)
+            session = await create_new_session(db, pdf_token, request.user_id)  # 유저 아이디 전달
             logger.info(f"새 세션 생성 성공: {pdf_token}")
             return {"session_token": pdf_token}
         except Exception as e:
@@ -270,6 +354,7 @@ async def start_chat(pdf_token: str, db: Session = Depends(get_db)):
         logger.error(f"채팅 시작 중 오류 발생: {str(e)}")
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @chat.post("/cleanup")
 async def cleanup_sessions(db: Session = Depends(get_db)):
